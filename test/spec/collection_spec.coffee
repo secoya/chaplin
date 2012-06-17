@@ -20,29 +20,29 @@ define [
 
     expectOrder = (order) ->
       for id, index in order
-        expect(collection.at(index).id).toBe id
+        expect(collection.at(index).id).to.equal id
 
     it 'should mixin a Subscriber', ->
       for own name, value of Subscriber
-        expect(collection[name]).toBe Subscriber[name]
+        expect(collection[name]).to.equal Subscriber[name]
 
     it 'should initialize a Deferred', ->
-      expect(typeof collection.initDeferred).toBe 'function'
+      expect(collection.initDeferred).to.be.a 'function'
       collection.initDeferred()
       for method in ['done', 'fail', 'progress', 'state', 'promise']
-        expect(typeof collection[method]).toBe 'function'
-      expect(collection.state()).toBe 'pending'
+        expect(typeof collection[method]).to.equal 'function'
+      expect(collection.state()).to.equal 'pending'
 
     it 'should initialize a SyncMachine', ->
-      expect(typeof collection.initSyncMachine).toBe 'function'
+      expect(collection.initSyncMachine).to.be.a 'function'
       collection.initSyncMachine()
       for own name, value of SyncMachine
         if typeof value is 'function'
-          expect(collection[name]).toBe value
-      expect(collection.syncState()).toBe 'unsynced'
+          expect(collection[name]).to.equal value
+      expect(collection.syncState()).to.equal 'unsynced'
 
     it 'should add models atomically', ->
-      expect(typeof collection.addAtomic).toBe 'function'
+      expect(collection.addAtomic).to.be.a 'function'
 
       collection.reset ({id: i} for i in [0..2])
 
@@ -72,7 +72,7 @@ define [
       expect(resetSpy).toHaveBeenCalled()
 
     it 'should update models', ->
-      expect(typeof collection.update).toBe 'function'
+      expect(collection.update).to.be.a 'function'
 
       collection.reset ({id: i} for i in [0..5])
 
@@ -87,8 +87,8 @@ define [
       collection.update ({id: i} for i in newOrder)
       expectOrder newOrder
 
-      expect(addSpy.callCount).toBe 3
-      expect(removeSpy.callCount).toBe 3
+      expect(addSpy.callCount).to.equal 3
+      expect(removeSpy.callCount).to.equal 3
       expect(resetSpy).not.toHaveBeenCalled()
 
     it 'should update models deeply', ->
@@ -101,24 +101,24 @@ define [
 
       for id in [1, 3, 5]
         model = collection.get id
-        expect(model.get('old1')).toBe true
-        expect(model.get('old2')).toBe true
-        expect(model.get('new')).toBe true
+        expect(model.get('old1')).to.be.ok
+        expect(model.get('old2')).to.be.ok
+        expect(model.get('new')).to.be.ok
       for id in [7, 9, 11]
         model = collection.get id
-        expect(model.get('old1')).toBe undefined
-        expect(model.get('old2')).toBe true
-        expect(model.get('new')).toBe true
+        expect(model.get('old1')).to.equal undefined
+        expect(model.get('old2')).to.be.ok
+        expect(model.get('new')).to.be.ok
 
     it 'should dispose itself correctly', ->
-      expect(typeof collection.dispose).toBe 'function'
+      expect(collection.dispose).to.be.a 'function'
       collection.dispose()
 
-      expect(collection.length).toBe 0
+      expect(collection.length).to.equal 0
 
-      expect(collection.disposed).toBe true
+      expect(collection.disposed).to.be.ok
       if Object.isFrozen
-        expect(Object.isFrozen(collection)).toBe true
+        expect(Object.isFrozen(collection)).to.be.ok
 
     it 'should fire a dispose event', ->
       disposeSpy = jasmine.createSpy()
@@ -153,11 +153,11 @@ define [
 
       collection.dispose()
 
-      expect(collection.state()).toBe 'rejected'
+      expect(collection.state()).to.equal 'rejected'
       expect(failSpy).toHaveBeenCalled()
 
     it 'should remove instance properties', ->
       collection.dispose()
 
       for prop in ['model', 'models', '_byId', '_byCid']
-        expect(_(collection).has prop).toBe false
+        expect(_(collection).has prop).to.not.be.ok

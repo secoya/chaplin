@@ -63,52 +63,52 @@ define [
 
     it 'should mixin a Subscriber', ->
       for own name, value of Subscriber
-        expect(view[name]).toBe Subscriber[name]
+        expect(view[name]).to.equal Subscriber[name]
 
     it 'should render', ->
-      expect(typeof view.render).toBe 'function'
+      expect(view.render).to.be.a 'function'
       renderResult = view.render()
-      expect(renderResult).toBe view
+      expect(renderResult).to.equal view
 
     it 'should render a template', ->
       view.render()
-      expect(view.$el.html()).toBe template
+      expect(view.$el.html()).to.equal template
 
     it 'should render automatically', ->
       view = new TestView autoRender: true
-      expect(renderCalled).toBe true
-      expect(view.el.parentNode).toBe null
+      expect(renderCalled).to.be.ok
+      expect(view.el.parentNode).to.equal null
 
     it 'should attach itself to an element automatically', ->
       view = new TestView container: testbed
-      expect(renderCalled).toBe false
+      expect(renderCalled).to.not.be.ok
       # Expect that the view is attached to the DOM *on first render*,
       # not immediately after initialize
-      expect(view.el.parentNode).toBe null
+      expect(view.el.parentNode).to.equal null
       view.render()
-      expect(view.el.parentNode).toBe testbed
+      expect(view.el.parentNode).to.equal testbed
 
     it 'should attach itself to a selector automatically', ->
       view = new TestView container: '#testbed'
       view.render()
-      expect(view.el.parentNode).toBe testbed
+      expect(view.el.parentNode).to.equal testbed
 
     it 'should attach itself to a jQuery object automatically', ->
       view = new TestView container: $('#testbed')
       view.render()
-      expect(view.el.parentNode).toBe testbed
+      expect(view.el.parentNode).to.equal testbed
 
     it 'should use the given attach method', ->
       view = new TestView container: testbed, containerMethod: 'after'
       view.render()
-      expect(view.el).toBe testbed.nextSibling
-      expect(view.el.parentNode).toBe testbed.parentNode
+      expect(view.el).to.equal testbed.nextSibling
+      expect(view.el.parentNode).to.equal testbed.parentNode
 
     it 'should consider autoRender, container and containerMethod properties', ->
       view = new ConfiguredTestView()
-      expect(renderCalled).toBe true
-      expect(view.el).toBe testbed.previousSibling
-      expect(view.el.parentNode).toBe testbed.parentNode
+      expect(renderCalled).to.be.ok
+      expect(view.el).to.equal testbed.previousSibling
+      expect(view.el.parentNode).to.equal testbed.parentNode
 
     it 'should fire an addedToDOM event attching itself to the DOM', ->
       view = new TestView container: testbed
@@ -118,31 +118,31 @@ define [
       expect(spy).toHaveBeenCalled()
 
     it 'should register user input events', ->
-      expect(typeof view.delegate).toBe 'function'
-      expect(typeof view.undelegate).toBe 'function'
+      expect(view.delegate).to.be.a 'function'
+      expect(view.undelegate).to.be.a 'function'
 
       spy = jasmine.createSpy()
       handler = view.delegate 'click', spy
-      expect(typeof handler).toBe 'function'
+      expect(handler).to.be.a 'function'
       $(view.el).trigger 'click'
       expect(spy).toHaveBeenCalled()
 
       view.undelegate()
       $(view.el).trigger 'click'
-      expect(spy.callCount).toBe 1
+      expect(spy.callCount).to.equal 1
 
       view.render()
       spy = jasmine.createSpy()
       handler = view.delegate 'click', 'p', spy
-      expect(typeof handler).toBe 'function'
+      expect(handler).to.be.a 'function'
       p = view.$('p')
-      expect(p.length).toBe 1
+      expect(p.length).to.equal 1
       p.trigger 'click'
       expect(spy).toHaveBeenCalled()
 
       view.undelegate()
       p.trigger 'click'
-      expect(spy.callCount).toBe 1
+      expect(spy.callCount).to.equal 1
 
     it 'should check delegate parameters', ->
       expect(-> view.delegate()).toThrow()
@@ -153,7 +153,7 @@ define [
       expect(-> view.delegate('click', (->), 123)).toThrow()
 
     it 'should bind handlers to model events', ->
-      expect(typeof view.modelBind).toBe 'function'
+      expect(view.modelBind).to.be.a 'function'
       expect(-> view.modelBind()).toThrow()
       expect(-> view.modelBind(1, 2)).toThrow()
       expect(-> view.modelBind(1, ->)).toThrow()
@@ -167,7 +167,7 @@ define [
 
       view.modelBind 'change:foo', spy
       model.set foo: 'qux'
-      expect(spy.callCount).toBe 2
+      expect(spy.callCount).to.equal 2
 
     it 'should bind handlers to collection events', ->
       setCollection()
@@ -177,7 +177,7 @@ define [
       expect(spy).toHaveBeenCalled()
 
     it 'should unbind handlers from model events', ->
-      expect(typeof view.modelUnbind).toBe 'function'
+      expect(view.modelUnbind).to.be.a 'function'
 
       setModel()
       spy = jasmine.createSpy()
@@ -201,7 +201,7 @@ define [
       view.modelBind 'foo', ->
         context = this
       model.trigger 'foo'
-      expect(context).toBe view
+      expect(context).to.equal view
 
     bindAndTrigger = (model, view) ->
       fooSpy = jasmine.createSpy()
@@ -211,17 +211,17 @@ define [
       allSpy = jasmine.createSpy()
       view.modelBind 'all', allSpy
       model.trigger 'foo bar'
-      expect(fooSpy.callCount).toBe 1
-      expect(barSpy.callCount).toBe 1
-      expect(allSpy.callCount).toBe 2
+      expect(fooSpy.callCount).to.equal 1
+      expect(barSpy.callCount).to.equal 1
+      expect(allSpy.callCount).to.equal 2
       view.modelUnbindAll()
       view.trigger 'foo bar'
-      expect(fooSpy.callCount).toBe 1
-      expect(barSpy.callCount).toBe 1
-      expect(allSpy.callCount).toBe 2
+      expect(fooSpy.callCount).to.equal 1
+      expect(barSpy.callCount).to.equal 1
+      expect(allSpy.callCount).to.equal 2
 
     it 'should unbind all model handlers', ->
-      expect(typeof view.modelUnbindAll).toBe 'function'
+      expect(view.modelUnbindAll).to.be.a 'function'
       setModel()
       bindAndTrigger model, view
 
@@ -231,67 +231,67 @@ define [
       collection.dispose()
 
     it 'should pass model attributes to elements', ->
-      expect(typeof view.pass).toBe 'function'
+      expect(view.pass).to.be.a 'function'
       setModel()
       view.pass 'foo', 'p'
       view.render()
       p = view.$('p')
-      expect(p.text()).toBe 'content'
+      expect(p.text()).to.equal 'content'
       model.set foo: 'bar'
-      expect(p.text()).toBe 'bar'
+      expect(p.text()).to.equal 'bar'
 
     it 'should pass model attributes to input elements', ->
       setModel()
       view.$el.html('<p><input type="text" id="foo"></p>')
       view.pass 'foo', '#foo'
       input = view.$('input')
-      expect(input.val()).toBe ''
+      expect(input.val()).to.equal ''
       model.set foo: 'bar'
-      expect(input.val()).toBe 'bar'
+      expect(input.val()).to.equal 'bar'
 
     it 'should add and return subviews', ->
-      expect(typeof view.subview).toBe 'function'
+      expect(view.subview).to.be.a 'function'
 
       subview = new View()
       view.subview 'fooSubview', subview
-      expect(view.subview 'fooSubview').toBe subview
-      expect(view.subviews.length).toBe 1
+      expect(view.subview 'fooSubview').to.equal subview
+      expect(view.subviews.length).to.equal 1
 
       subview2 = new View()
       view.subview 'fooSubview', subview2
-      expect(view.subview 'fooSubview').toBe subview2
-      expect(view.subviews.length).toBe 1
+      expect(view.subview 'fooSubview').to.equal subview2
+      expect(view.subviews.length).to.equal 1
 
     it 'should remove subviews', ->
-      expect(typeof view.removeSubview).toBe 'function'
+      expect(view.removeSubview).to.be.a 'function'
 
       # By name
       subview = new View()
       view.subview 'fooSubview', subview
 
       view.removeSubview 'fooSubview'
-      expect(typeof view.subview('fooSubview')).toBe 'undefined'
-      expect(view.subviews.length).toBe 0
+      expect(typeof view.subview('fooSubview')).to.equal 'undefined'
+      expect(view.subviews.length).to.equal 0
 
       # By view
       subview = new View()
       view.subview 'barSubview', subview
 
       view.removeSubview subview
-      expect(typeof view.subview('barSubview')).toBe 'undefined'
-      expect(view.subviews.length).toBe 0
+      expect(typeof view.subview('barSubview')).to.equal 'undefined'
+      expect(view.subviews.length).to.equal 0
 
     it 'should return empty template data without a model', ->
       templateData = view.getTemplateData()
-      expect(_.isObject templateData).toBe true
-      expect(_.isEmpty templateData).toBe true
+      expect(templateData).to.be.an 'object'
+      expect(_.isEmpty templateData).to.be.ok
 
     it 'should return proper template data for a model', ->
       setModel()
       templateData = view.getTemplateData()
-      expect(_.isObject templateData).toBe true
-      expect(templateData.foo).toBe 'foo'
-      expect(templateData.bar).toBe 'bar'
+      expect(templateData).to.be.an 'object'
+      expect(templateData.foo).to.equal 'foo'
+      expect(templateData.bar).to.equal 'bar'
 
     it 'should return proper template data for collections', ->
       model1 = new Model foo: 'foo'
@@ -300,31 +300,31 @@ define [
       view.collection = collection
 
       d = view.getTemplateData()
-      expect(_.isObject d).toBe true
-      expect(_.isObject d.items).toBe true
-      expect(_.isObject d.items[0]).toBe true
-      expect(d.items[0].foo).toBe 'foo'
-      expect(_.isObject d.items[1]).toBe true
-      expect(d.items[1].bar).toBe 'bar'
+      expect(d).to.be.an 'object'
+      expect(d.items).to.be.an 'object'
+      expect(_.isObject d.items[0]).to.be.ok
+      expect(d.items[0].foo).to.equal 'foo'
+      expect(_.isObject d.items[1]).to.be.ok
+      expect(d.items[1].bar).to.equal 'bar'
 
     it 'should add the Deferred state to the template data', ->
       setModel()
       model.initDeferred()
       templateData = view.getTemplateData()
-      expect(templateData.resolved).toBe false
+      expect(templateData.resolved).to.not.be.ok
       model.resolve()
       templateData = view.getTemplateData()
-      expect(templateData.resolved).toBe true
+      expect(templateData.resolved).to.be.ok
 
     it 'should add the SyncMachine state to the template data', ->
       setModel()
       model.initSyncMachine()
       templateData = view.getTemplateData()
-      expect(templateData.synced).toBe false
+      expect(templateData.synced).to.not.be.ok
       model.beginSync()
       model.finishSync()
       templateData = view.getTemplateData()
-      expect(templateData.synced).toBe true
+      expect(templateData.synced).to.be.ok
 
     it 'should not cover existing synced and resolved properties', ->
       setModel()
@@ -332,8 +332,8 @@ define [
       model.initSyncMachine()
       model.set resolved: 'foo', synced: 'bar'
       templateData = view.getTemplateData()
-      expect(templateData.resolved).toBe 'foo'
-      expect(templateData.synced).toBe 'bar'
+      expect(templateData.resolved).to.equal 'foo'
+      expect(templateData.synced).to.equal 'bar'
 
     it 'should pass model attributes to the template function', ->
       setModel()
@@ -351,27 +351,27 @@ define [
       expect(templateFunc).toHaveBeenCalled()
 
       templateData = templateFunc.mostRecentCall.args[0]
-      expect(typeof templateData).toBe 'object'
-      expect(templateData.foo).toBe 'foo'
-      expect(templateData.bar).toBe 'bar'
+      expect(templateData).to.be.a 'object'
+      expect(templateData.foo).to.equal 'foo'
+      expect(templateData.bar).to.equal 'bar'
 
     it 'should dispose itself correctly', ->
-      expect(typeof view.dispose).toBe 'function'
+      expect(view.dispose).to.be.a 'function'
       view.dispose()
 
-      expect(view.disposed).toBe true
+      expect(view.disposed).to.be.ok
       if Object.isFrozen
-        expect(Object.isFrozen(view)).toBe true
+        expect(Object.isFrozen(view)).to.be.ok
 
     it 'should remove itself from the DOM', ->
       view.$el
         .attr('id', 'disposed-view')
         .appendTo(document.body)
-      expect($('#disposed-view').length).toBe 1
+      expect($('#disposed-view').length).to.equal 1
 
       view.dispose()
 
-      expect($('#disposed-view').length).toBe 0
+      expect($('#disposed-view').length).to.equal 0
 
     it 'should dispose subviews', ->
       subview = new View()
@@ -380,7 +380,7 @@ define [
 
       view.dispose()
 
-      expect(subview.disposed).toBe true
+      expect(subview.disposed).to.be.ok
       expect(subview.dispose).toHaveBeenCalled()
 
     it 'should unsubscribe from Pub/Sub events', ->
@@ -421,14 +421,14 @@ define [
         '_callbacks'
       ]
       for prop in properties
-        expect(_(view).has prop).toBe false
+        expect(_(view).has prop).to.not.be.ok
 
     it 'should dispose itself when the model or collection is disposed', ->
       model = new Model()
       view = new TestView model: model
       model.dispose()
-      expect(model.disposed).toBe true
-      expect(view.disposed).toBe true
+      expect(model.disposed).to.be.ok
+      expect(view.disposed).to.be.ok
 
     it 'should not render when disposed given render wasn’t overridden', ->
       # Vanilla View which doesn’t override render
@@ -436,28 +436,28 @@ define [
       view.getTemplateFunction = TestView::getTemplateFunction
       spyOn(view, 'afterRender').andCallThrough()
       renderResult = view.render()
-      expect(renderResult).toBe view
+      expect(renderResult).to.equal view
 
       view.dispose()
 
       renderResult = view.render()
-      expect(renderResult).toBe false
-      expect(view.afterRender.callCount).toBe 1
+      expect(renderResult).to.not.be.ok
+      expect(view.afterRender.callCount).to.equal 1
 
     it 'should not render when disposed given render was overridden', ->
       view = new TestView container: '#testbed'
       spyOn(view, 'afterRender').andCallThrough()
       renderResult = view.render()
-      expect(renderResult).toBe view
-      expect(view.afterRender.callCount).toBe 1
-      expect(renderCalled).toBe true
-      expect(view.el.parentNode).toBe testbed
+      expect(renderResult).to.equal view
+      expect(view.afterRender.callCount).to.equal 1
+      expect(renderCalled).to.be.ok
+      expect(view.el.parentNode).to.equal testbed
 
       view.dispose()
 
       renderResult = view.render()
-      expect(renderResult).toBe false
+      expect(renderResult).to.not.be.ok
       # Render was called but super call should not do anything
-      expect(renderCalled).toBe true
-      expect($(testbed).children().length).toBe 0
-      expect(view.afterRender.callCount).toBe 1
+      expect(renderCalled).to.be.ok
+      expect($(testbed).children().length).to.equal 0
+      expect(view.afterRender.callCount).to.equal 1

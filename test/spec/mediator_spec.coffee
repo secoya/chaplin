@@ -10,12 +10,12 @@ define [
     #console.debug 'mediator spec'
 
     it 'should be a simple object', ->
-      expect(_.isObject mediator).toBe true
+      expect(mediator).to.be.an 'object'
 
     it 'should have Pub/Sub methods', ->
-      expect(typeof mediator.subscribe).toBe 'function'
-      expect(typeof mediator.unsubscribe).toBe 'function'
-      expect(typeof mediator.publish).toBe 'function'
+      expect(mediator.subscribe).to.be.a 'function'
+      expect(mediator.unsubscribe).to.be.a 'function'
+      expect(mediator.publish).to.be.a 'function'
 
     it 'should have readonly Pub/Sub methods', ->
       return unless support.propertyDescriptors and
@@ -24,9 +24,9 @@ define [
         'on', 'off', 'trigger']
       _(methods).forEach (property) ->
         desc = Object.getOwnPropertyDescriptor(mediator, property)
-        expect(desc.enumerable).toBe true
-        expect(desc.writable).toBe false
-        expect(desc.configurable).toBe false
+        expect(desc.enumerable).to.be.ok
+        expect(desc.writable).to.not.be.ok
+        expect(desc.configurable).to.not.be.ok
 
     it 'should publish messages to subscribers', ->
       spy = jasmine.createSpy()

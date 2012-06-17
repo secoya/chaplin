@@ -39,15 +39,15 @@ define [
     it 'should hide the view of an inactive controller', ->
       testController.view.$el.css 'display', 'block'
       mediator.publish 'beforeControllerDispose', testController
-      expect(testController.view.$el.css('display')).toBe 'none'
+      expect(testController.view.$el.css('display')).to.equal 'none'
 
     it 'should show the view of the active controller', ->
       testController.view.$el.css 'display', 'none'
       mediator.publish 'startupController', startupControllerContext
       $el = testController.view.$el
-      expect($el.css('display')).toBe 'block'
-      expect($el.css('opacity')).toBe '1'
-      expect($el.css('visibility')).toBe 'visible'
+      expect($el.css('display')).to.equal 'block'
+      expect($el.css('opacity')).to.equal '1'
+      expect($el.css('visibility')).to.equal 'visible'
 
     it 'should set the document title', ->
       runs ->
@@ -55,7 +55,7 @@ define [
       waits 100
       runs ->
         title = "#{testController.title} \u2013 #{layout.title}"
-        expect(document.title).toBe title
+        expect(document.title).to.equal title
 
     it 'should route clicks on internal links', ->
       spy = jasmine.createSpy()
@@ -68,8 +68,8 @@ define [
       args = spy.mostRecentCall.args
       passedPath = args[0]
       passedCallback = args[1]
-      expect(passedPath).toBe path
-      expect(typeof passedCallback).toBe 'function'
+      expect(passedPath).to.equal path
+      expect(passedCallback).to.be.a 'function'
 
     it 'should correctly pass the query string', ->
       spy = jasmine.createSpy()
@@ -82,8 +82,8 @@ define [
       args = spy.mostRecentCall.args
       passedPath = args[0]
       passedCallback = args[1]
-      expect(passedPath).toBe path
-      expect(typeof passedCallback).toBe 'function'
+      expect(passedPath).to.equal path
+      expect(passedCallback).to.be.a 'function'
       mediator.unsubscribe '!router:route', spy
 
     it 'should not route links without href attributes', ->
@@ -164,16 +164,16 @@ define [
       expect(spy2).toHaveBeenCalled()
       layout.dispose()
       el.click()
-      expect(spy1.callCount).toBe 1
-      expect(spy2.callCount).toBe 1
+      expect(spy1.callCount).to.equal 1
+      expect(spy2.callCount).to.equal 1
 
     it 'should register event handlers on the document programatically', ->
       expect(layout.delegateEvents is Backbone.View::delegateEvents)
-        .toBe true
+        .to.be.ok
       expect(layout.undelegateEvents is Backbone.View::undelegateEvents)
-        .toBe true
-      expect(typeof layout.delegateEvents).toBe 'function'
-      expect(typeof layout.undelegateEvents).toBe 'function'
+        .to.be.ok
+      expect(layout.delegateEvents).to.be.a 'function'
+      expect(layout.undelegateEvents).to.be.a 'function'
 
       spy1 = jasmine.createSpy()
       spy2 = jasmine.createSpy()
@@ -187,8 +187,8 @@ define [
       expect(spy2).toHaveBeenCalled()
       layout.undelegateEvents()
       el.click()
-      expect(spy1.callCount).toBe 1
-      expect(spy2.callCount).toBe 1
+      expect(spy1.callCount).to.equal 1
+      expect(spy2.callCount).to.equal 1
 
     it 'should dispose itself correctly', ->
       spy1 = jasmine.createSpy()
@@ -197,12 +197,12 @@ define [
       spy2 = jasmine.createSpy()
       layout.delegateEvents 'click #testbed': spy2
 
-      expect(typeof layout.dispose).toBe 'function'
+      expect(layout.dispose).to.be.a 'function'
       layout.dispose()
 
-      expect(layout.disposed).toBe true
+      expect(layout.disposed).to.be.ok
       if Object.isFrozen
-        expect(Object.isFrozen(layout)).toBe true
+        expect(Object.isFrozen(layout)).to.be.ok
 
       mediator.publish 'foo'
       $('#testbed').click()
@@ -212,10 +212,10 @@ define [
       expect(spy2).not.toHaveBeenCalled()
 
     it 'should be extendable', ->
-      expect(typeof Layout.extend).toBe 'function'
+      expect(Layout.extend).to.be.a 'function'
 
       DerivedLayout = Layout.extend()
       derivedLayout = new DerivedLayout()
-      expect(derivedLayout instanceof Layout).toBe true
+      expect(derivedLayout).to.be.an.instanceof Layout
 
       derivedLayout.dispose()

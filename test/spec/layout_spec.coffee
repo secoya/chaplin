@@ -1,16 +1,39 @@
 define [
   'jquery'
+  'underscore'
   'chaplin/mediator'
   'chaplin/lib/router'
   'chaplin/controllers/controller'
   'chaplin/views/layout'
   'chaplin/views/view'
-], ($, mediator, Router, Controller, Layout, View) ->
+], ($, _, mediator, Router, Controller, Layout, View) ->
   'use strict'
 
   describe 'Layout', ->
     # Initialize shared variables
     layout = testController = startupControllerContext = router = null
+
+    createLink = (attributes) ->
+      attributes = if _.isObject(attributes) then _.clone(attributes) else {}
+      # Yes, this is ugly. We’re doing it because IE8-10 reports an incorrect
+      # protocol if the href attribute is set programatically.
+      if attributes.href?
+        div = document.createElement 'div'
+        div.innerHTML = "<a href='#{attributes.href}'>Hello World</a>"
+        link = div.firstChild
+        delete attributes.href
+        $link = $(link)
+      else
+        $link = $(document.createElement 'a')
+      $link.attr attributes
+
+    expectWasNotRouted = (linkAttributes) ->
+      spy = sinon.spy()
+      mediator.subscribe '!router:route', spy
+      $link = createLink linkAttributes
+      $link.appendTo(document.body).click().remove()
+      expect(spy).was.notCalled()
+      mediator.unsubscribe '!router:route', spy
 
     beforeEach ->
       # Create the layout
@@ -39,119 +62,78 @@ define [
     it 'should hide the view of an inactive controller', ->
       testController.view.$el.css 'display', 'block'
       mediator.publish 'beforeControllerDispose', testController
-      expect(testController.view.$el.css('display')).toBe 'none'
+      expect(testController.view.$el.css('display')).to.equal 'none'
 
     it 'should show the view of the active controller', ->
       testController.view.$el.css 'display', 'none'
       mediator.publish 'startupController', startupControllerContext
       $el = testController.view.$el
-      expect($el.css('display')).toBe 'block'
-      expect($el.css('opacity')).toBe '1'
-      expect($el.css('visibility')).toBe 'visible'
+      expect($el.css('display')).to.equal 'block'
+      expect($el.css('opacity')).to.equal '1'
+      expect($el.css('visibility')).to.equal 'visible'
 
-    it 'should set the document title', ->
-      runs ->
-        mediator.publish 'startupController', startupControllerContext
-      waits 100
-      runs ->
+    it 'should set the document title', (done) ->
+      mediator.publish 'startupController', startupControllerContext
+      setTimeout ->
         title = "#{testController.title} \u2013 #{layout.title}"
-        expect(document.title).toBe title
+        expect(document.title).to.equal title
+        done()
+      , 100
 
     it 'should route clicks on internal links', ->
-      spy = jasmine.createSpy()
+      spy = sinon.spy()
       mediator.subscribe '!router:route', spy
       path = '/an/internal/link'
-      a = $('<a>').attr('href', path).text('Hello World')
-        .appendTo(document.body)
-        .click()
-        .remove()
-      expect(spy).toHaveBeenCalled()
-      args = spy.mostRecentCall.args
+      createLink(href: path).appendTo(document.body).click().remove()
+      expect(spy).was.called()
+      args = spy.lastCall.args
       passedPath = args[0]
       passedCallback = args[1]
-      expect(passedPath).toBe path
-      expect(typeof passedCallback).toBe 'function'
+      expect(passedPath).to.equal path
+      expect(passedCallback).to.be.a 'function'
 
     it 'should correctly pass the query string', ->
-      spy = jasmine.createSpy()
+      spy = sinon.spy()
       mediator.subscribe '!router:route', spy
       path = '/another/link?foo=bar&baz=qux'
-      $('<a>').attr('href', path).text('Hello World')
-        .appendTo(document.body)
-        .click()
-        .remove()
-      args = spy.mostRecentCall.args
+      createLink(href: path).appendTo(document.body).click().remove()
+      args = spy.lastCall.args
       passedPath = args[0]
       passedCallback = args[1]
-      expect(passedPath).toBe path
-      expect(typeof passedCallback).toBe 'function'
+      expect(passedPath).to.equal path
+      expect(passedCallback).to.be.a 'function'
       mediator.unsubscribe '!router:route', spy
 
     it 'should not route links without href attributes', ->
-      spy = jasmine.createSpy()
-      mediator.subscribe '!router:route', spy
-      $('<a>').attr('name', 'foo').text('Hello World')
-        .appendTo(document.body)
-        .click()
-        .remove()
-      expect(spy).not.toHaveBeenCalled()
-      mediator.unsubscribe '!router:route', spy
-
-      spy = jasmine.createSpy()
-      mediator.subscribe '!router:route', spy
-      $('<a>Hello World</a>')
-        .appendTo(document.body)
-        .click()
-        .remove()
-      expect(spy).not.toHaveBeenCalled()
-      mediator.unsubscribe '!router:route', spy
+      expectWasNotRouted name: 'foo'
 
     it 'should not route links with empty href', ->
-      # Technically an empty string is a valid relative URL
-      # but it doesn’t make sense to route it
-      spy = jasmine.createSpy()
-      mediator.subscribe '!router:route', spy
-      $('<a>').attr('href', '').text('Hello World')
-        .appendTo(document.body)
-        .click()
-        .remove()
-      expect(spy).not.toHaveBeenCalled()
-      mediator.unsubscribe '!router:route', spy
+      expectWasNotRouted href: ''
 
     it 'should not route links to document fragments', ->
-      spy = jasmine.createSpy()
-      mediator.subscribe '!router:route', spy
-      $('<a>').attr('href', '#foo').text('Hello World')
-        .appendTo(document.body)
-        .click()
-        .remove()
-      expect(spy).not.toHaveBeenCalled()
-      mediator.unsubscribe '!router:route', spy
+      expectWasNotRouted href: '#foo'
 
     it 'should not route links with a noscript class', ->
-      spy = jasmine.createSpy()
-      mediator.subscribe '!router:route', spy
-      $('<a>').attr('href', '/leave-the-app').addClass('noscript').text('Hello World')
-        .appendTo(document.body)
-        .click()
-        .remove()
-      expect(spy).not.toHaveBeenCalled()
-      mediator.unsubscribe '!router:route', spy
+      expectWasNotRouted href: '/foo', class: 'noscript'
+
+    it 'should not route rel=external links', ->
+      expectWasNotRouted href: '/foo', rel: 'external'
+
+    it 'should not route target=blank links', ->
+      expectWasNotRouted href: '/foo', target: '_blank'
+
+    it 'should not route non-http(s) links', ->
+      expectWasNotRouted href: 'mailto:a@a.com'
+      expectWasNotRouted href: 'javascript:1+1'
+      expectWasNotRouted href: 'tel:1488'
 
     it 'should not route clicks on external links', ->
-      spy = jasmine.createSpy()
-      mediator.subscribe '!router:route', spy
-      path = 'http://www.example.org/'
-      $('<a>').attr('href', path).text('Hello World')
-        .appendTo(document.body)
-        .click()
-        .remove()
-      expect(spy).not.toHaveBeenCalled()
-      mediator.unsubscribe '!router:route', spy
+      expectWasNotRouted href: 'http://example.com/'
+      expectWasNotRouted href: 'https://example.com/'
 
     it 'should register event handlers on the document declaratively', ->
-      spy1 = jasmine.createSpy()
-      spy2 = jasmine.createSpy()
+      spy1 = sinon.spy()
+      spy2 = sinon.spy()
       layout.dispose()
       class TestLayout extends Layout
         events:
@@ -161,62 +143,62 @@ define [
       layout = new TestLayout
       el = $('#testbed')
       el.click()
-      expect(spy1).toHaveBeenCalled()
-      expect(spy2).toHaveBeenCalled()
+      expect(spy1).was.called()
+      expect(spy2).was.called()
       layout.dispose()
       el.click()
-      expect(spy1.callCount).toBe 1
-      expect(spy2.callCount).toBe 1
+      expect(spy1.callCount).to.equal 1
+      expect(spy2.callCount).to.equal 1
 
     it 'should register event handlers on the document programatically', ->
-      expect(layout.delegateEvents is Backbone.View::delegateEvents)
-        .toBe true
-      expect(layout.undelegateEvents is Backbone.View::undelegateEvents)
-        .toBe true
-      expect(typeof layout.delegateEvents).toBe 'function'
-      expect(typeof layout.undelegateEvents).toBe 'function'
+      expect(layout.delegateEvents)
+        .to.equal Backbone.View::delegateEvents
+      expect(layout.undelegateEvents)
+        .to.equal Backbone.View::undelegateEvents
+      expect(layout.delegateEvents).to.be.a 'function'
+      expect(layout.undelegateEvents).to.be.a 'function'
 
-      spy1 = jasmine.createSpy()
-      spy2 = jasmine.createSpy()
+      spy1 = sinon.spy()
+      spy2 = sinon.spy()
       layout.testClickHandler = spy1
       layout.delegateEvents
         'click #testbed': 'testClickHandler'
         click: spy2
       el = $('#testbed')
       el.click()
-      expect(spy1).toHaveBeenCalled()
-      expect(spy2).toHaveBeenCalled()
+      expect(spy1).was.called()
+      expect(spy2).was.called()
       layout.undelegateEvents()
       el.click()
-      expect(spy1.callCount).toBe 1
-      expect(spy2.callCount).toBe 1
+      expect(spy1.callCount).to.equal 1
+      expect(spy2.callCount).to.equal 1
 
     it 'should dispose itself correctly', ->
-      spy1 = jasmine.createSpy()
+      spy1 = sinon.spy()
       layout.subscribeEvent 'foo', spy1
 
-      spy2 = jasmine.createSpy()
+      spy2 = sinon.spy()
       layout.delegateEvents 'click #testbed': spy2
 
-      expect(typeof layout.dispose).toBe 'function'
+      expect(layout.dispose).to.be.a 'function'
       layout.dispose()
 
-      expect(layout.disposed).toBe true
+      expect(layout.disposed).to.be.ok()
       if Object.isFrozen
-        expect(Object.isFrozen(layout)).toBe true
+        expect(Object.isFrozen(layout)).to.be.ok()
 
       mediator.publish 'foo'
       $('#testbed').click()
 
       # It should unsubscribe from events
-      expect(spy1).not.toHaveBeenCalled()
-      expect(spy2).not.toHaveBeenCalled()
+      expect(spy1).was.notCalled()
+      expect(spy2).was.notCalled()
 
     it 'should be extendable', ->
-      expect(typeof Layout.extend).toBe 'function'
+      expect(Layout.extend).to.be.a 'function'
 
       DerivedLayout = Layout.extend()
       derivedLayout = new DerivedLayout()
-      expect(derivedLayout instanceof Layout).toBe true
+      expect(derivedLayout).to.be.a Layout
 
       derivedLayout.dispose()

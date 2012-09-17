@@ -302,15 +302,15 @@ define [
 
     it 'should be able to look in module subdirs for module controllers', ->
       proto = Test3Controller.prototype
-      historyURL = spyOn(proto, 'historyURL').andCallThrough()
-      initialize = spyOn(proto, 'initialize').andCallThrough()
-      action     = spyOn(proto, 'show').andCallThrough()
+      historyURL = sinon.spy(proto, 'historyURL')
+      initialize = sinon.spy(proto, 'initialize')
+      action     = sinon.spy(proto, 'show')
 
       mediator.publish 'matchRoute', route3, params
 
-      expect(initialize).toHaveBeenCalledWith params, 'test2'
-      expect(action).toHaveBeenCalledWith params, 'test2'
-      expect(historyURL).toHaveBeenCalledWith params
+      expect(initialize).was.calledWith params, 'test2'
+      expect(action).was.calledWith params, 'test2'
+      expect(historyURL).was.calledWith params
 
     it 'should dispose itself correctly', ->
       expect(dispatcher.dispose).to.be.a 'function'

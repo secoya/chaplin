@@ -349,15 +349,15 @@ defined (or the getView() must be overridden)'
         length = children.length
         if length is 0 or position is length
           # Insert at the end
-          $list.append viewEl
+          @attachView view, $list, 'append'
         else
           # Insert at the right position
           if position is 0
             $next = children.eq position
-            $next.before viewEl
+            @attachView view, $next, 'before'
           else
             $previous = children.eq position - 1
-            $previous.after viewEl
+            @attachView view, $previous, 'after'
 
       # Tell the view that it was added to the DOM
       view.trigger 'addedToDOM'

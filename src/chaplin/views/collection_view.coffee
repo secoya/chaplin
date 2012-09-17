@@ -1,6 +1,6 @@
 define [
-  'jquery',
-  'underscore',
+  'jquery'
+  'underscore'
   'chaplin/views/view'
 ], ($, _, View) ->
   'use strict'
@@ -21,7 +21,7 @@ define [
 
     # By default, fading in is done by javascript function which can be
     # slow on mobile devices. CSS animations are faster,
-    # but require user's manual definitions.
+    # but require user’s manual definitions.
     # CSS classes used are: animated-item-view, animated-item-view-end.
     useCssAnimation: false
 
@@ -144,7 +144,7 @@ defined (or the getView() must be overridden)'
     render: ->
       super
 
-      # Set the $list property
+      # Set the $list property with the actual list container
       @$list = if @listSelector then @$(@listSelector) else @$el
 
       @initFallback()
@@ -209,10 +209,18 @@ defined (or the getView() must be overridden)'
 
     # Applies a filter to the collection view.
     # Expects an iterator function as parameter.
-    # Hides all items for which the iterator returns false.
-    filter: (filterer) ->
+    # If no callback, hides all items for which the iterator returns false.
+    filter: (filterer, callback) ->
       # Save the new filterer function
       @filterer = filterer
+
+      # Default callback (hides excluded items)
+      callback ?= (view, included) =>
+        display = if included then '' else 'none'
+        view.$el.stop(true, true).css('display', display)
+        # Update visibleItems list, but do not trigger
+        # a `visibilityChange` event immediately
+        @updateVisibleItems view.model, included, false
 
       # Show/hide existing views
       unless _(@viewsByCid).isEmpty()
@@ -220,9 +228,9 @@ defined (or the getView() must be overridden)'
 
           # Apply filter to the item
           included = if typeof filterer is 'function'
-              filterer item, index
-            else
-              true
+            filterer item, index
+          else
+            true
 
           # Show/hide the view accordingly
           view = @viewsByCid[item.cid]
@@ -231,13 +239,8 @@ defined (or the getView() must be overridden)'
             throw new Error 'CollectionView#filter: ' +
               "no view found for #{item.cid}"
 
-          view.$el
-            .stop(true, true)
-            .css('display', if included then '' else 'none')
-
-          # Update visibleItems list, but do not trigger
-          # a `visibilityChange` event immediately
-          @updateVisibleItems item, included, false
+          # Apply callback
+          callback view, included
 
       # Trigger a combined `visibilityChange` event
       @trigger 'visibilityChange', @visibleItems
@@ -287,7 +290,7 @@ defined (or the getView() must be overridden)'
       view = @renderItem item
       @insertView item, view, index
 
-    # Instantiate and render an item using the viewsByCid hash as a cache
+    # Instantiate and render an item using the `viewsByCid` hash as a cache
     renderItem: (item) ->
       # Get the existing view
       view = @viewsByCid[item.cid]
@@ -313,9 +316,9 @@ defined (or the getView() must be overridden)'
 
       # Is the item included in the filter?
       included = if typeof @filterer is 'function'
-          @filterer item, position
-        else
-          true
+        @filterer item, position
+      else
+        true
 
       # Get the view’s top element
       viewEl = view.el
@@ -336,20 +339,25 @@ defined (or the getView() must be overridden)'
       $list = @$list
 
       # Get the children which originate from item views
-      children = $list.children (@itemSelector or undefined)
-      length = children.length
-
-      if length is 0 or position is length
-        # Insert at the end
-        $list.append viewEl
+      children = if @itemSelector
+        $list.children @itemSelector
       else
-        # Insert at the right position
-        if position is 0
-          $next = children.eq position
-          $next.before viewEl
+        $list.children()
+
+      # Check if it needs to be inserted
+      unless children.get(position) is viewEl
+        length = children.length
+        if length is 0 or position is length
+          # Insert at the end
+          $list.append viewEl
         else
-          $previous = children.eq position - 1
-          $previous.after viewEl
+          # Insert at the right position
+          if position is 0
+            $next = children.eq position
+            $next.before viewEl
+          else
+            $previous = children.eq position - 1
+            $previous.after viewEl
 
       # Tell the view that it was added to the DOM
       view.trigger 'addedToDOM'

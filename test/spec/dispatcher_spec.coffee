@@ -170,12 +170,12 @@ define [
       mediator.publish 'matchRoute', route2, params
 
       d = dispatcher
-      expect(d.previousControllerName).to.equal 'test1'
-      expect(d.currentControllerName).to.equal 'test2'
+      expect(d.previousControllerName).to.be 'test1'
+      expect(d.currentControllerName).to.be 'test2'
       expect(d.currentController).to.be.a Test2Controller
-      expect(d.currentAction).to.equal 'show'
-      expect(d.currentParams).to.equal params
-      expect(d.url).to.equal "test2/#{params.id}"
+      expect(d.currentAction).to.be 'show'
+      expect(d.currentParams).to.be params
+      expect(d.url).to.be "test2/#{params.id}"
 
     it 'should dispose inactive controllers and fire beforeControllerDispose events', ->
       proto = Test2Controller.prototype
@@ -197,7 +197,7 @@ define [
       expect(beforeControllerDispose).was.called()
       passedController = beforeControllerDispose.lastCall.args[0]
       expect(passedController).to.be.a Test1Controller
-      expect(passedController.disposed).to.be.ok()
+      expect(passedController.disposed).to.be true
 
       mediator.unsubscribe 'beforeControllerDispose', beforeControllerDispose
 
@@ -211,9 +211,9 @@ define [
       passedEvent = startupController.lastCall.args[0]
       expect(passedEvent).to.be.an 'object'
       expect(passedEvent.controller).to.be.a Test1Controller
-      expect(passedEvent.controllerName).to.equal 'test1'
-      expect(passedEvent.params).to.equal params
-      expect(passedEvent.previousControllerName).to.equal 'test2'
+      expect(passedEvent.controllerName).to.be 'test1'
+      expect(passedEvent.params).to.be params
+      expect(passedEvent.previousControllerName).to.be 'test2'
 
       mediator.unsubscribe 'startupController', startupController
 
@@ -230,12 +230,12 @@ define [
       expect(historyURL).was.calledWith params
 
       d = dispatcher
-      expect(d.previousControllerName).to.equal 'test1'
-      expect(d.currentControllerName).to.equal 'test1'
+      expect(d.previousControllerName).to.be 'test1'
+      expect(d.currentControllerName).to.be 'test1'
       expect(d.currentController).to.be.a Test1Controller
-      expect(d.currentAction).to.equal 'show'
-      expect(d.currentParams).to.equal params
-      expect(d.url).to.equal "test1/#{params.id}"
+      expect(d.currentAction).to.be 'show'
+      expect(d.currentParams).to.be params
+      expect(d.url).to.be "test1/#{params.id}"
       historyURL.restore()
       initialize.restore()
       action.restore()
@@ -255,12 +255,12 @@ define [
       # because we’re not testing the router. Just test
       # if execution stopped (e.g. Test1Controller is still active)
       d = dispatcher
-      expect(d.previousControllerName).to.equal 'test1'
-      expect(d.currentControllerName).to.equal 'test1'
+      expect(d.previousControllerName).to.be 'test1'
+      expect(d.currentControllerName).to.be 'test1'
       expect(d.currentController).to.be.a Test1Controller
-      expect(d.currentAction).to.equal 'show'
-      expect(d.currentParams).not.to.equal params
-      expect(d.url).not.to.equal "test1/#{params.id}"
+      expect(d.currentAction).to.be 'show'
+      expect(d.currentParams).not.to.be params
+      expect(d.url).not.to.be "test1/#{params.id}"
 
       expect(startupController).was.notCalled()
 
@@ -286,16 +286,16 @@ define [
       # Expect that the new controller was called because this does not require
       # the router but the controller to fire a !startupController event
       d = dispatcher
-      expect(d.previousControllerName).to.equal 'test1'
-      expect(d.currentControllerName).to.equal 'test2'
+      expect(d.previousControllerName).to.be 'test1'
+      expect(d.currentControllerName).to.be 'test2'
       expect(d.currentController).to.be.a Test2Controller
-      expect(d.currentAction).to.equal 'show'
-      expect(d.currentParams).to.equal params
-      expect(d.url).to.equal "test2/#{params.id}"
+      expect(d.currentAction).to.be 'show'
+      expect(d.currentParams).to.be params
+      expect(d.url).to.be "test2/#{params.id}"
 
       # startupController event was only triggered once
       expect(startupController).was.called()
-      expect(startupController.callCount).to.equal 1
+      expect(startupController.callCount).to.be 1
 
       mediator.unsubscribe 'startupController', startupController
       redirectAction.restore()
@@ -321,9 +321,9 @@ define [
       mediator.publish 'matchRoute', route1, params
       expect(initialize).was.notCalled()
 
-      expect(dispatcher.disposed).to.be.ok()
+      expect(dispatcher.disposed).to.be true
       if Object.isFrozen
-        expect(Object.isFrozen(dispatcher)).to.be.ok()
+        expect(Object.isFrozen(dispatcher)).to.be true
       initialize.restore()
 
     it 'should be extendable', ->

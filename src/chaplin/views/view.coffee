@@ -112,7 +112,7 @@ define [
         @afterInitialize()
 
       @on 'addedToDOM', => @_addedToDOM = yes
-
+    
     attachView: (view, selector = @$el, method = 'append') ->
       if arguments.length == 2 and @_allowedAttachMethods.indexOf(selector) isnt -1
         method = selector
@@ -129,7 +129,6 @@ define [
       else
         @on 'addedToDOM', -> view.trigger 'addedToDOM'
 
-    # Allowed methods to attach a view
     attachToDOM: (selector, method = 'append')->
       $(selector)[method] @$el
       @trigger 'addedToDOM'

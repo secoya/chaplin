@@ -122,9 +122,9 @@ define [
         throw new Error 'The jQuery method must be one of '+@_allowedAttachMethods
       
       if _.isString selector
-        @$el[method] view.$el
-      else
         @$(selector)[method] view.$el
+      else
+        selector[method] view.$el
       
       # Propagate addedToDom event
       if @_addedToDOM

@@ -121,10 +121,10 @@ define [
       if @_allowedAttachMethods.indexOf(method) is -1
         throw new Error 'The jQuery method must be one of '+@_allowedAttachMethods
       
-      if _.isString selector
-        @$(selector)[method] view.$el
-      else
+      if selector instanceof $
         selector[method] view.$el
+      else
+        @$(selector)[method] view.$el
       
       # Propagate addedToDom event
       if @_addedToDOM

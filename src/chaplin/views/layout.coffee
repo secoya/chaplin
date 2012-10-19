@@ -109,7 +109,14 @@ define [
 
       el = event.currentTarget
       $el = $(el)
-      isAnchor = el.nodeName is 'A'
+      href = $el.attr 'href'
+      # Ignore empty paths even if it is a valid relative URL
+      # Ignore links to fragment identifiers
+      return if href is '' or
+        href is undefined or
+        href.indexOf('javascript:') is 0 or # Return if href is a javascript snippet.
+        href.charAt(0) is '#' or
+        $el.hasClass('noscript')
 
       # Get the href and perform checks on it
       href = $el.attr('href') or $el.data('href') or null

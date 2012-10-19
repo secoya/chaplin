@@ -43,6 +43,14 @@ define [
     subviews: null
     subviewsByName: null
 
+    # DOM events
+    # --------
+
+    # Flag whether we're added to the DOM or not.
+    _addedToDOM: no
+    # Allowed methods to attach a view.
+    _allowedAttachMethods: ['prepend', 'append', 'before', 'after']
+
     # Method wrapping to enable `afterRender` and `afterInitialize`
     # -------------------------------------------------------------
 
@@ -103,6 +111,31 @@ define [
       # Call `afterInitialize` if `initialize` was not wrapped
       unless @initializeIsWrapped
         @afterInitialize()
+
+      @on 'addedToDOM', => @_addedToDOM = yes
+    
+    attachView: (view, selector = @$el, method = 'append') ->
+      if arguments.length == 2 and @_allowedAttachMethods.indexOf(selector) isnt -1
+        method = selector
+        selector = @$el
+      
+      if @_allowedAttachMethods.indexOf(method) is -1
+        throw new Error 'The jQuery method must be one of '+@_allowedAttachMethods
+      
+      if selector instanceof $
+        selector[method] view.$el
+      else
+        @$(selector)[method] view.$el
+      
+      # Propagate addedToDom event
+      if @_addedToDOM
+        view.trigger 'addedToDOM'
+      else
+        @on 'addedToDOM', -> view.trigger 'addedToDOM'
+
+    attachToDOM: (selector, method = 'append')->
+      $(selector)[method] @$el
+      @trigger 'addedToDOM'
 
     # This method is called after a specific `initialize` of a derived class
     afterInitialize: ->

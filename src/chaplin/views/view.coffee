@@ -128,13 +128,13 @@ define [
       
       # Propagate addedToDom event
       if @_addedToDOM
-        view.trigger 'addedToDOM'
+        @triggerAddedToDOM(view)
       else
-        @on 'addedToDOM', -> view.trigger 'addedToDOM'
+        @on 'addedToDOM', -> @triggerAddedToDOM(view)
 
     attachToDOM: (selector, method = 'append')->
       $(selector)[method] @$el
-      @trigger 'addedToDOM'
+      @triggerAddedToDOM()
 
     # This method is called after a specific `initialize` of a derived class
     afterInitialize: ->
@@ -387,7 +387,12 @@ define [
         # Append the view to the DOM
         $(@container)[@containerMethod] @el
         # Trigger an event
-        @trigger 'addedToDOM'
+        @triggerAddedToDOM()
+
+
+    # Helper method to trigger the added to dom event
+    triggerAddedToDOM: (view = @) ->
+      view.trigger 'addedToDOM'
 
     # Disposal
     # --------

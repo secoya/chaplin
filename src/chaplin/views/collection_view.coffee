@@ -359,9 +359,6 @@ defined (or the getView() must be overridden)'
             $previous = children.eq position - 1
             @attachView view, $previous, 'after'
 
-      # Tell the view that it was added to the DOM
-      view.trigger 'addedToDOM'
-
       # Update the list of visible items, trigger a `visibilityChange` event
       @updateVisibleItems item, included
 

@@ -394,6 +394,16 @@ define [
     triggerAddedToDOM: (view = @) ->
       view.trigger 'addedToDOM'
 
+    
+    onceAddedToDOM: (callback) ->
+      if @_addedToDOM
+        callback.call @
+      else
+        fn = () =>
+          @off 'addedToDOM', fn
+          callback.call @
+        @on 'addedToDOM', fn
+
     # Disposal
     # --------
 

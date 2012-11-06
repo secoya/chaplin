@@ -118,6 +118,9 @@ define [
       # Passing the params and the old controller name
       controller = new ControllerConstructor params, currentControllerName
 
+      # Change the url before the controller is initialized, so application code isnt confused.
+      @adjustURL controller, params
+
       # Call the specific controller action
       # Passing the params and the old controller name
       controller[action] params, currentControllerName
@@ -131,8 +134,6 @@ define [
       @currentController = controller
       @currentAction = action
       @currentParams = params
-
-      @adjustURL controller, params
 
       # We're done! Spread the word!
       @publishEvent 'startupController',

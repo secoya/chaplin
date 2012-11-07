@@ -49,7 +49,7 @@ define [
 
       # Create the actual regular expression
       # Match until the end of the URL or the begin of query string
-      @regExp = ///^#{pattern}(?=\?|$)///
+      @regExp = ///^#{pattern}(?=[?/]|$)///
 
     addParamName: (match, paramName) =>
       @paramNames ?= []

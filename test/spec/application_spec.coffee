@@ -4,32 +4,41 @@ define [
   'chaplin/application'
   'chaplin/lib/router'
   'chaplin/dispatcher'
+  'chaplin/composer'
   'chaplin/views/layout'
-], (_, mediator, Application, Router, Dispatcher, Layout) ->
+  'chaplin/lib/event_broker'
+], (_, mediator, Application, Router, Dispatcher, Composer, Layout, EventBroker) ->
   'use strict'
 
   describe 'Application', ->
-    #console.debug 'Application spec'
-
     app = new Application()
 
     it 'should be a simple object', ->
-      expect(_.isObject app).toBe true
-      expect(app instanceof Application).toBe true
+      expect(app).to.be.an 'object'
+      expect(app).to.be.a Application
+
+    it 'should mixin a EventBroker', ->
+      for own name, value of EventBroker
+        expect(app[name]).to.be EventBroker[name]
 
     it 'should initialize', ->
-      expect(typeof app.initialize).toBe 'function'
+      expect(app.initialize).to.be.a 'function'
       app.initialize()
 
     it 'should create a dispatcher', ->
-      expect(typeof app.initDispatcher).toBe 'function'
+      expect(app.initDispatcher).to.be.a 'function'
       app.initDispatcher()
-      expect(app.dispatcher instanceof Dispatcher).toBe true
+      expect(app.dispatcher).to.be.a Dispatcher
 
     it 'should create a layout', ->
-      expect(typeof app.initLayout).toBe 'function'
+      expect(app.initLayout).to.be.a 'function'
       app.initLayout()
-      expect(app.layout instanceof Layout).toBe true
+      expect(app.layout).to.be.a Layout
+
+    it 'should create a composer', ->
+      expect(app.initComposer).to.be.a 'function'
+      app.initComposer()
+      expect(app.composer).to.be.a Composer
 
     it 'should create a router', ->
       passedMatch = null
@@ -38,33 +47,37 @@ define [
         routesCalled = true
         passedMatch = match
 
-      expect(typeof app.initRouter).toBe 'function'
-      expect(app.initRouter.length).toBe 2
-      app.initRouter routes, root: '/'
+      expect(app.initRouter).to.be.a 'function'
+      expect(app.initRouter.length).to.be 2
+      app.initRouter routes, root: '/', pushState: false
 
-      expect(app.router instanceof Router).toBe true
-      expect(routesCalled).toBe true
-      expect(typeof passedMatch).toBe 'function'
+      expect(app.router).to.be.a Router
+      expect(routesCalled).to.be true
+      expect(passedMatch).to.be.a 'function'
 
-    it 'should start Backbone.history', ->
-      expect(Backbone.History.started).toBe true
+    it 'should not start Backbone.history', ->
+      expect(Backbone.History.started).to.be false
+
+    it 'should start Backbone.history with startRouting()', ->
+      app.startRouting()
+      expect(Backbone.History.started).to.be true
 
     it 'should dispose itself correctly', ->
-      expect(typeof app.dispose).toBe 'function'
+      expect(app.dispose).to.be.a 'function'
       app.dispose()
 
-      for prop in ['dispatcher', 'layout', 'router']
-        expect(_(app).has prop).toBe false
+      for prop in ['dispatcher', 'layout', 'router', 'composer']
+        expect(app).not.to.have.own.property prop
 
-      expect(app.disposed).toBe true
+      expect(app.disposed).to.be true
       if Object.isFrozen
-        expect(Object.isFrozen(app)).toBe true
+        expect(Object.isFrozen(app)).to.be true
 
     it 'should be extendable', ->
-      expect(typeof Application.extend).toBe 'function'
+      expect(Application.extend).to.be.a 'function'
 
       DerivedApplication = Application.extend()
       derivedApp = new DerivedApplication()
-      expect(derivedApp instanceof Application).toBe true
+      expect(derivedApp).to.be.a Application
 
       derivedApp.dispose()

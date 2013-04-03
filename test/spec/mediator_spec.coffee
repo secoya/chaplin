@@ -7,40 +7,37 @@ define [
   'use strict'
 
   describe 'mediator', ->
-    #console.debug 'mediator spec'
-
     it 'should be a simple object', ->
-      expect(_.isObject mediator).toBe true
+      expect(mediator).to.be.an 'object'
 
     it 'should have Pub/Sub methods', ->
-      expect(typeof mediator.subscribe).toBe 'function'
-      expect(typeof mediator.unsubscribe).toBe 'function'
-      expect(typeof mediator.publish).toBe 'function'
+      expect(mediator.subscribe).to.be.a 'function'
+      expect(mediator.unsubscribe).to.be.a 'function'
+      expect(mediator.publish).to.be.a 'function'
 
     it 'should have readonly Pub/Sub methods', ->
       return unless support.propertyDescriptors and
         Object.getOwnPropertyDescriptor
-      methods = ['subscribe', 'unsubscribe', 'publish',
-        'on', 'off', 'trigger']
+      methods = ['subscribe', 'unsubscribe', 'publish']
       _(methods).forEach (property) ->
         desc = Object.getOwnPropertyDescriptor(mediator, property)
-        expect(desc.enumerable).toBe true
-        expect(desc.writable).toBe false
-        expect(desc.configurable).toBe false
+        expect(desc.enumerable).to.be true
+        expect(desc.writable).to.be false
+        expect(desc.configurable).to.be false
 
     it 'should publish messages to subscribers', ->
-      spy = jasmine.createSpy()
+      spy = sinon.spy()
       eventName = 'foo'
       payload = 'payload'
 
       mediator.subscribe eventName, spy
       mediator.publish eventName, payload
 
-      expect(spy).toHaveBeenCalledWith payload
+      expect(spy).was.calledWith payload
       mediator.unsubscribe eventName, spy
 
     it 'should allow to unsubscribe to events', ->
-      spy = jasmine.createSpy()
+      spy = sinon.spy()
       eventName = 'foo'
       payload = 'payload'
 
@@ -48,4 +45,17 @@ define [
       mediator.unsubscribe eventName, spy
       mediator.publish eventName, payload
 
-      expect(spy).not.toHaveBeenCalledWith payload
+      expect(spy).was.neverCalledWith payload
+
+    it 'should support sealing itself', ->
+      strict = do (-> 'use strict'; !this)
+      return unless strict
+
+      expect(mediator.seal).to.be.a 'function'
+      old = Object.seal
+      Object.seal = undefined
+      mediator.seal()
+      expect(-> mediator.a = 1; delete mediator.a).to.not.throwError()
+      Object.seal = old
+      mediator.seal()
+      expect(-> mediator.a = 1).to.throwError()

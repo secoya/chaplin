@@ -1,114 +1,67 @@
-define [
-  'underscore',
-  'backbone',
-  'chaplin/lib/subscriber',
-  'chaplin/lib/sync_machine'
-  'chaplin/models/model'
-], (_, Backbone, Subscriber, SyncMachine, Model) ->
-  'use strict'
+'use strict'
 
-  # Abstract class which extends the standard Backbone collection
-  # in order to add some functionality
-  class Collection extends Backbone.Collection
+_ = require 'underscore'
+Backbone = require 'backbone'
+EventBroker = require 'chaplin/lib/event_broker'
+Model = require 'chaplin/models/model'
+utils = require 'chaplin/lib/utils'
 
-    # Mixin a Subscriber
-    _(@prototype).extend Subscriber
+# Abstract class which extends the standard Backbone collection
+# in order to add some functionality.
+module.exports = class Collection extends Backbone.Collection
+  # Mixin an EventBroker.
+  _(@prototype).extend EventBroker
 
-    # Use the Chaplin model per default, not Backbone.Model
-    model: Model
+  # Use the Chaplin model per default, not Backbone.Model.
+  model: Model
 
-    # Mixin a Deferred
-    initDeferred: ->
-      _(this).extend $.Deferred()
+  # Mixin a Deferred.
+  initDeferred: ->
+    _(this).extend $.Deferred()
 
-    # Mixin a synchronization state machine
-    initSyncMachine: ->
-      _(this).extend SyncMachine
+  # Serializes collection.
+  serialize: ->
+    @map utils.serialize
 
-    # Adds a collection atomically, i.e. throws no event until
-    # all members have been added
-    addAtomic: (models, options = {}) ->
-      return unless models.length
-      options.silent = true
-      direction = if typeof options.at is 'number' then 'pop' else 'shift'
-      while model = models[direction]()
-        @add model, options
-      @trigger 'reset'
+  # Disposal
+  # --------
 
-    # Updates a collection with a list of models
-    # Just like the reset method, but only adds new items and
-    # removes items which are not in the new list.
-    # Fires individual `add` and `remove` event instead of one `reset`.
-    #
-    # options:
-    #   deep: Boolean flag to specify whether existing models
-    #         should be updated with new values
-    update: (models, options = {}) ->
-      fingerPrint = @pluck('id').join()
-      ids = _(models).pluck('id')
-      newFingerPrint = ids.join()
+  disposed: false
 
-      # Only remove if ID fingerprints differ
-      if newFingerPrint isnt fingerPrint
-        # Remove items which are not in the new list
-        _ids = _(ids) # Underscore wrapper
-        i = @models.length
-        while i--
-          model = @models[i]
-          unless _ids.include model.id
-            @remove model
+  dispose: ->
+    return if @disposed
 
-      # Only add/update list if ID fingerprints differ
-      # or update is deep (member attributes)
-      if newFingerPrint isnt fingerPrint or options.deep
-        # Add items which are not yet in the list
-        for model, i in models
-          preexistent = @get model.id
-          if preexistent
-            # Update existing model
-            preexistent.set model if options.deep
-          else
-            # Insert new model
-            @add model, at: i
+    # Fire an event to notify associated views.
+    @trigger 'dispose', this
 
-      return
+    # Empty the list silently, but do not dispose all models since
+    # they might be referenced elsewhere.
+    @reset [], silent: true
 
-    # Disposal
-    # --------
+    # Unbind all global event handlers.
+    @unsubscribeAllEvents()
 
-    disposed: false
+    # Unbind all referenced handlers.
+    @stopListening()
 
-    dispose: ->
-      return if @disposed
+    # Remove all event handlers on this module.
+    @off()
 
-      # Fire an event to notify associated views
-      @trigger 'dispose', this
+    # If the model is a Deferred, reject it
+    # This does nothing if it was resolved before.
+    @reject?()
 
-      # Empty the list silently, but do not dispose all models since
-      # they might be referenced elsewhere
-      @reset [], silent: true
+    # Remove model constructor reference, internal model lists
+    # and event handlers.
+    properties = [
+      'model',
+      'models', '_byId', '_byCid',
+      '_callbacks'
+    ]
+    delete this[prop] for prop in properties
 
-      # Unbind all global event handlers
-      @unsubscribeAllEvents()
+    # Finished.
+    @disposed = true
 
-      # Remove all event handlers on this module
-      @off()
-
-      # If the model is a Deferred, reject it
-      # This does nothing if it was resolved before
-      @reject?()
-
-      # Remove model constructor reference, internal model lists
-      # and event handlers
-      properties = [
-        'model',
-        'models', '_byId', '_byCid',
-        '_callbacks'
-      ]
-      delete this[prop] for prop in properties
-
-      # Finished
-      @disposed = true
-
-      # You’re frozen when your heart’s not open
-      Object.freeze? this
+    # You’re frozen when your heart’s not open.
+    Object.freeze? this

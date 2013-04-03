@@ -1,0 +1,34 @@
+{
+  "name": "chaplin",
+  "version": "0.8.1",
+  "dependencies": {
+    "mocha": "1.7.x",
+    "expect": "0.2.x",
+    "requirejs": "2.1.x",
+    "jquery": "1.9.x",
+    "underscore": "1.4.x",
+    "backbone": "1.0.x",
+    "benchmark": "git://github.com/bestiejs/benchmark.js.git"
+  },
+  "exportsOverride": {
+    "mocha": {
+      "scripts/..": "mocha.js",
+      "styles/..": "mocha.css"
+    },
+    "expect": {
+      ".": "expect.js"
+    },
+    "backbone": {
+      ".": "backbone.js"
+    },
+    "requirejs": {
+      ".": "require.js"
+    },
+    "jquery": {
+      ".": "jquery.js"
+    },
+    "underscore": {
+      ".": "underscore.js"
+    }
+  }
+}

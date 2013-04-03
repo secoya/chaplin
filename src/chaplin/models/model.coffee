@@ -1,109 +1,118 @@
-define [
-  'underscore',
-  'backbone',
-  'chaplin/lib/utils'
-  'chaplin/lib/subscriber'
-  'chaplin/lib/sync_machine'
-], (_, Backbone, utils, Subscriber, SyncMachine) ->
-  'use strict'
+'use strict'
 
-  class Model extends Backbone.Model
+_ = require 'underscore'
+Backbone = require 'backbone'
+utils = require 'chaplin/lib/utils'
+EventBroker = require 'chaplin/lib/event_broker'
 
-    # Mixin a Subscriber
-    _(@prototype).extend Subscriber
+# Private helper function for serializing attributes recursively,
+# creating objects which delegate to the original attributes
+# in order to protect them from changes.
+serializeAttributes = (model, attributes, modelStack) ->
+  # Create a delegator object.
+  delegator = utils.beget attributes
 
-    # Mixin a Deferred
-    initDeferred: ->
-      _(this).extend $.Deferred()
+  # Add model to stack.
+  modelStack ?= {}
+  modelStack[model.cid] = true
 
-    # Mixin a synchronization state machine
-    initSyncMachine: ->
-      _(this).extend SyncMachine
+  # Map model/collection to their attributes. Create a property
+  # on the delegator that shadows the original attribute.
+  for key, value of attributes
 
-    # This method is used to get the attributes for the view template
-    # and might be overwritten by decorators which cannot create a
-    # proper `attributes` getter due to ECMAScript 3 limits.
-    getAttributes: ->
-      @attributes
+    # Handle models.
+    if value instanceof Backbone.Model
+      delegator[key] = serializeModelAttributes value, model, modelStack
 
-    # Private helper function for serializing attributes recursively,
-    # creating objects which delegate to the original attributes
-    # when a property needs to be overwritten.
-    serializeAttributes = (model, attributes, modelStack) ->
-      # Create a delegator on initial call
-      unless modelStack
-        delegator = utils.beget attributes
-        modelStack = [model]
-      else
-        # Add model to stack
-        modelStack.push model
-      # Map model/collection to their attributes
-      for key, value of attributes
-        if value instanceof Model
-          # Don’t change the original attribute, create a property
-          # on the delegator which shadows the original attribute
-          delegator ?= utils.beget attributes
-          delegator[key] = if value is model or value in modelStack
-            # Nullify circular references
-            null
-          else
-            # Serialize recursively
-            serializeAttributes(
-              value, value.getAttributes(), modelStack
-            )
-        else if value instanceof Backbone.Collection
-          delegator ?= utils.beget attributes
-          delegator[key] = for item in value.models
-            serializeAttributes(
-              item, item.getAttributes(), modelStack
-            )
+    # Handle collections.
+    else if value instanceof Backbone.Collection
+      serializedModels = []
+      for otherModel in value.models
+        serializedModels.push(
+          serializeModelAttributes(otherModel, model, modelStack)
+        )
+      delegator[key] = serializedModels
 
-      # Remove model from stack
-      modelStack.pop()
-      # Return the delegator if it was created, otherwise the plain attributes
-      delegator or attributes
+  # Remove model from stack.
+  delete modelStack[model.cid]
 
-    # Return an object which delegates to the attributes
-    # (i.e. an object which has the attributes as prototype)
-    # so primitive values might be added and altered safely.
-    # Map models to their attributes, recursively.
-    serialize: ->
-      serializeAttributes this, @getAttributes()
+  # Return the delegator.
+  delegator
 
-    # Disposal
-    # --------
+# Serialize the attributes of a given model
+# in the context of a given tree.
+serializeModelAttributes = (model, currentModel, modelStack) ->
+  # Nullify circular references.
+  return null if model is currentModel or _(modelStack).has model.cid
+  # Serialize recursively.
+  attributes = if typeof model.getAttributes is 'function'
+    # Chaplin models.
+    model.getAttributes()
+  else
+    # Backbone models.
+    model.attributes
+  serializeAttributes model, attributes, modelStack
 
-    disposed: false
 
-    dispose: ->
-      return if @disposed
+# Abstraction that adds some useful functionality to backbone model.
+module.exports = class Model extends Backbone.Model
+  # Mixin an EventBroker.
+  _(@prototype).extend EventBroker
 
-      # Fire an event to notify associated collections and views
-      @trigger 'dispose', this
+  # Mixin a Deferred.
+  initDeferred: ->
+    _(this).extend $.Deferred()
 
-      # Unbind all global event handlers
-      @unsubscribeAllEvents()
+  # This method is used to get the attributes for the view template
+  # and might be overwritten by decorators which cannot create a
+  # proper `attributes` getter due to ECMAScript 3 limits.
+  getAttributes: ->
+    @attributes
 
-      # Remove all event handlers on this module
-      @off()
+  # Return an object which delegates to the attributes
+  # (i.e. an object which has the attributes as prototype)
+  # so primitive values might be added and altered safely.
+  # Map models to their attributes, recursively.
+  serialize: ->
+    serializeAttributes this, @getAttributes()
 
-      # If the model is a Deferred, reject it
-      # This does nothing if it was resolved before
-      @reject?()
+  # Disposal
+  # --------
 
-      # Remove the collection reference, internal attribute hashes
-      # and event handlers
-      properties = [
-        'collection',
-        'attributes', 'changed'
-        '_escapedAttributes', '_previousAttributes',
-        '_silent', '_pending',
-        '_callbacks'
-      ]
-      delete this[prop] for prop in properties
+  disposed: false
 
-      # Finished
-      @disposed = true
+  dispose: ->
+    return if @disposed
 
-      # You’re frozen when your heart’s not open
-      Object.freeze? this
+    # Fire an event to notify associated collections and views.
+    @trigger 'dispose', this
+
+    # Unbind all global event handlers.
+    @unsubscribeAllEvents()
+
+    # Unbind all referenced handlers.
+    @stopListening()
+
+    # Remove all event handlers on this module.
+    @off()
+
+    # If the model is a Deferred, reject it
+    # This does nothing if it was resolved before.
+    @reject?()
+
+    # Remove the collection reference, internal attribute hashes
+    # and event handlers.
+    properties = [
+      'collection',
+      'attributes', 'changed'
+      '_escapedAttributes', '_previousAttributes',
+      '_silent', '_pending',
+      '_callbacks'
+    ]
+    delete this[prop] for prop in properties
+
+    # Finished.
+    @disposed = true
+
+    # You’re frozen when your heart’s not open.
+    Object.freeze? this

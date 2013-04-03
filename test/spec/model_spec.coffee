@@ -1,154 +1,214 @@
 define [
   'underscore'
+  'backbone'
   'chaplin/mediator'
   'chaplin/models/model'
-  'chaplin/lib/subscriber'
-  'chaplin/lib/sync_machine'
-], (_, mediator, Model, Subscriber, SyncMachine) ->
+  'chaplin/lib/event_broker'
+], (_, Backbone, mediator, Model, EventBroker) ->
   'use strict'
 
   describe 'Model', ->
-    #console.debug 'Model spec'
-
     model = null
 
     beforeEach ->
-      model = new Model id: 1, foo: 'foo'
+      model = new Model id: 1
 
     afterEach ->
       model.dispose()
 
-    it 'should mixin a Subscriber', ->
-      for own name, value of Subscriber
-        expect(model[name]).toBe Subscriber[name]
+    it 'should mixin a EventBroker', ->
+      for own name, value of EventBroker
+        expect(model[name]).to.be EventBroker[name]
 
     it 'should initialize a Deferred', ->
-      expect(typeof model.initDeferred).toBe 'function'
+      expect(model.initDeferred).to.be.a 'function'
       model.initDeferred()
       for method in ['done', 'fail', 'progress', 'state', 'promise']
-        expect(typeof model[method]).toBe 'function'
-      expect(model.state()).toBe 'pending'
-
-    it 'should initialize a SyncMachine', ->
-      expect(typeof model.initSyncMachine).toBe 'function'
-      model.initSyncMachine()
-      for own name, value of SyncMachine
-        if typeof value is 'function'
-          expect(model[name]).toBe value
-      expect(model.syncState()).toBe 'unsynced'
+        expect(typeof model[method]).to.be 'function'
+      expect(model.state()).to.be 'pending'
 
     it 'should return the attributes per default', ->
-      expect(model.getAttributes()).toBe model.attributes
+      expect(model.getAttributes()).to.be model.attributes
 
     it 'should serialize the attributes', ->
-      model1 = model
-      model2 = new Model
-        id: 2
-        bar: 'bar'
-      model3 = new Model
-        id: 3
-        qux: 'qux'
-      model4 = new Model
-        id: 4
-        foo: 'foo'
-      model5 = new Model
-        id: 5
-        baz: 'baz'
+      model1 = model.set number: 'one'
+      model2 = new Model id: 2, number: 'two'
+      model3 = new Model id: 3, number: 'three'
+      model4 = new Model id: 4, number: 'four'
+      model5 = new Model id: 5, number: 'five'
       collection = new Backbone.Collection [model4, model5]
-      model1.set model2: model2
-      model2.set model3: model3
-      model2.set collection: collection
-      model2.set model2: model2 # Circular fun!
-      model3.set model2: model2 # Even more fun!
+      model1.set {model2}
+      model2.set {model3}
+      model2.set {collection}
+      model2.set {model2} # Circular fun!
+      model3.set {model2} # Even more fun!
+      model4.set {model2} # Even more fun!
 
-      d = model.serialize()
+      # Reference tree:
+      # model1
+      #   model2
+      #     model3
+      #       model2
+      #     collection
+      #       model4
+      #         model2
+      #       model5
+      #     model2
 
-      # Expected
-      e =
-        foo: 'foo'
+      actual = model.serialize()
+
+      expected =
+        id: 1
+        number: 'one'
         model2:
-          bar: 'bar'
+          id: 2
+          number: 'two'
           # Circular references are nullified
           model2: null
           model3:
-            qux: 'qux'
+            id: 3
+            number: 'three'
             # Circular references are nullified
             model2: null
           collection: [
-            {foo: 'foo'},
-            {baz: 'baz'}
+            {
+              id: 4
+              number: 'four'
+              # Circular references are nullified
+              model2: null
+            },
+            {
+              id: 5
+              number: 'five'
+            }
           ]
 
-      #console.debug 'passedTemplateData', d
+      expect(actual).to.be.an 'object'
+      expect(actual.number).to.be expected.number
 
-      expect(_.isObject d).toBe true
-      expect(d.foo).toBe e.foo
+      expect(actual.model2).to.be.an 'object'
+      expect(actual.model2.number).to.be expected.model2.number
+      expect(actual.model2.model2).to.be expected.model2.model2
 
-      expect(_.isObject d.model2).toBe true
-      expect(d.model2.bar).toBe e.model2.bar
-      expect(d.model2.model2).toBe e.model2.model2
+      actualCollection = actual.model2.collection
+      expectedCollection = expected.model2.collection
+      expect(actualCollection).to.be.an 'array'
+      expect(actualCollection[0].number).to.be expectedCollection[0].number
+      expect(actualCollection[0].model2).to.be expectedCollection[0].model2
+      expect(actualCollection[1].number).to.be expectedCollection[1].number
 
-      expect(_.isObject d.model2.collection).toBe true
-      expect(d.model2.collection[0].foo).toBe e.model2.collection[0].foo
-      expect(d.model2.collection[1].baz).toBe e.model2.collection[1].baz
+      expect(actual.model2.model3).to.be.an 'object'
+      expect(actual.model2.model3.number).to.be expected.model2.model3.number
+      expect(actual.model2.model3.model2).to.be expected.model2.model3.model2
 
-      expect(_.isObject d.model2.model3).toBe true
-      expect(d.model2.model3.qux).toBe e.model2.model3.qux
-      expect(d.model2.model3.model2).toBe e.model2.model3.model2
+    it 'should protect the original attributes when serializing', ->
+      model1 = model.set number: 'one'
+      model2 = new Model id: 2, number: 'two'
+      model3 = new Backbone.Model id: 3, number: 'three'
+      model1.set {model2}
+      model1.set {model3}
 
-    it 'should dispose itself correctly', ->
-      expect(typeof model.dispose).toBe 'function'
-      model.dispose()
+      serialized = model1.serialize()
+      # Try to tamper with the model attributes
+      serialized.number = 'new'
+      serialized.model2.number = 'new'
+      serialized.model3.number = 'new'
 
-      expect(model.disposed).toBe true
-      if Object.isFrozen
-        expect(Object.isFrozen(model)).toBe true
+      # Original attributes remain unchanged
+      expect(model1.get('number')).to.be 'one'
+      expect(model2.get('number')).to.be 'two'
+      expect(model3.get('number')).to.be 'three'
 
-    it 'should fire a dispose event', ->
-      disposeSpy = jasmine.createSpy()
-      model.on 'dispose', disposeSpy
-
-      model.dispose()
-
-      expect(disposeSpy).toHaveBeenCalled()
-
-    it 'should unsubscribe from Pub/Sub events', ->
-      pubSubSpy = jasmine.createSpy()
-      model.subscribeEvent 'foo', pubSubSpy
-
-      model.dispose()
-
-      mediator.publish 'foo'
-      expect(pubSubSpy).not.toHaveBeenCalled()
-
-    it 'should remove all event handlers from itself', ->
-      modelBindSpy = jasmine.createSpy()
-      model.on 'foo', modelBindSpy
-
-      model.dispose()
-
-      model.trigger 'foo'
-      expect(modelBindSpy).not.toHaveBeenCalled()
-
-    it 'should reject the Deferred on disposal', ->
-      model.initDeferred()
-      failSpy = jasmine.createSpy()
-      model.fail failSpy
-
-      model.dispose()
-
-      expect(model.state()).toBe 'rejected'
-      expect(failSpy).toHaveBeenCalled()
-
-    it 'should remove instance properties', ->
-      model.dispose()
-
-      properties = [
-        'collection',
-        'attributes', 'changed'
-        '_escapedAttributes', '_previousAttributes',
-        '_silent', '_pending',
-        '_callbacks'
+    it 'should serialize nested Backbone models and collections', ->
+      model1 = model.set number: 'one'
+      model2 = new Model id: 2, number: 'two'
+      model3 = new Backbone.Model id: 3, number: 'three'
+      collection = new Backbone.Collection [
+        new Model id: 4, number: 'four'
+        new Backbone.Model id: 5, number: 'five'
       ]
-      for prop in properties
-        expect(_(model).has prop).toBe false
+
+      model1.set {model2}
+      model1.set {model3}
+      model1.set {collection}
+
+      actual = model1.serialize()
+
+      expect(actual.number).to.be 'one'
+      expect(actual.model2).to.be.an 'object'
+      expect(actual.model2.number).to.be 'two'
+      expect(actual.model3).to.be.an 'object'
+      expect(actual.model3.number).to.be 'three'
+
+      expect(actual.collection).to.be.an 'array'
+      expect(actual.collection.length).to.be 2
+      expect(actual.collection[0].number).to.be 'four'
+      expect(actual.collection[1].number).to.be 'five'
+
+    describe 'Disposal', ->
+      it 'should dispose itself correctly', ->
+        expect(model.dispose).to.be.a 'function'
+        model.dispose()
+
+        expect(model.disposed).to.be true
+        if Object.isFrozen
+          expect(Object.isFrozen(model)).to.be true
+
+      it 'should fire a dispose event', ->
+        disposeSpy = sinon.spy()
+        model.on 'dispose', disposeSpy
+
+        model.dispose()
+
+        expect(disposeSpy).was.called()
+
+      it 'should unsubscribe from Pub/Sub events', ->
+        pubSubSpy = sinon.spy()
+        model.subscribeEvent 'foo', pubSubSpy
+
+        model.dispose()
+
+        mediator.publish 'foo'
+        expect(pubSubSpy).was.notCalled()
+
+      it 'should remove all event handlers from itself', ->
+        modelBindSpy = sinon.spy()
+        model.on 'foo', modelBindSpy
+
+        model.dispose()
+
+        model.trigger 'foo'
+        expect(modelBindSpy).was.notCalled()
+
+      it 'should unsubscribe from other events', ->
+        spy = sinon.spy()
+        model2 = new Model
+        model.listenTo model2, 'foo', spy
+
+        model.dispose()
+
+        model2.trigger 'foo'
+        expect(spy).was.notCalled()
+
+      it 'should reject the Deferred on disposal', ->
+        model.initDeferred()
+        failSpy = sinon.spy()
+        model.fail failSpy
+
+        model.dispose()
+
+        expect(model.state()).to.be 'rejected'
+        expect(failSpy).was.called()
+
+      it 'should remove instance properties', ->
+        model.dispose()
+
+        properties = [
+          'collection',
+          'attributes', 'changed'
+          '_escapedAttributes', '_previousAttributes',
+          '_silent', '_pending',
+          '_callbacks'
+        ]
+        for prop in properties
+          expect(model).not.to.have.own.property prop

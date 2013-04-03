@@ -1,184 +1,203 @@
-define [
-  'underscore'
-  'backbone'
-  'chaplin/mediator'
-  'chaplin/lib/utils'
-  'chaplin/lib/subscriber'
-], (_, Backbone, mediator, utils, Subscriber) ->
-  'use strict'
+'use strict'
 
-  class Dispatcher
+_ = require 'underscore'
+Backbone = require 'backbone'
+utils = require 'chaplin/lib/utils'
+EventBroker = require 'chaplin/lib/event_broker'
 
-    # Borrow the static extend method from Backbone
-    @extend = Backbone.Model.extend
+module.exports = class Dispatcher
+  # Borrow the static extend method from Backbone.
+  @extend = Backbone.Model.extend
 
-    # Mixin a Subscriber
-    _(@prototype).extend Subscriber
+  # Mixin an EventBroker.
+  _(@prototype).extend EventBroker
 
-    # The previous controller name
-    previousControllerName: null
+  # The previous route information.
+  # This object contains the controller name, action, path, and name (if any).
+  previousRoute: null
 
-    # The current controller, its name, main view and parameters
-    currentControllerName: null
-    currentController: null
-    currentAction: null
-    currentParams: null
+  # The current controller, route information, and parameters.
+  # The current route object contains the same information as previous.
+  currentController: null
+  currentRoute: null
+  currentParams: null
 
-    # The current URL
-    url: null
+  constructor: ->
+    @initialize arguments...
 
-    constructor: ->
-      @initialize arguments...
+  initialize: (options = {}) ->
+    # Merge the options.
+    @settings = _(options).defaults
+      controllerPath: 'controllers/'
+      controllerSuffix: '_controller'
 
-    initialize: (options = {}) ->
-      # Merge the options
-      @settings = _(options).defaults
-        controllerPath: 'controllers/'
-        controllerSuffix: '_controller'
+    # Listen to global events.
+    @subscribeEvent 'router:match', @dispatch
 
-      # Listen to global events
-      @subscribeEvent 'matchRoute', @matchRoute
-      @subscribeEvent '!startupController', @startupController
+  # Controller management.
+  # Starting and disposing controllers.
+  # ----------------------------------
 
-    # Controller management
-    # Starting and disposing controllers
-    # ----------------------------------
+  # The standard flow is:
+  #
+  #   1. Test if it’s a new controller/action with new params
+  #   1. Hide the previous view
+  #   2. Dispose the previous controller
+  #   3. Instantiate the new controller, call the controller action
+  #   4. Show the new view
+  #
+  dispatch: (route, params, options) ->
+    # Clone params and options so the original objects remain untouched.
+    params = if params then _.clone(params) else {}
+    options = if options then _.clone(options) else {}
 
-    # Handler for the global matchRoute event
-    matchRoute: (route, params) ->
-      @startupController route.controller, route.action, params
+    # Whether to update the URL after controller startup.
+    # Default to true unless explicitly set to false.
+    options.changeURL = true unless options.changeURL is false
 
-    # Handler for the global !startupController event
-    #
-    # The standard flow is:
-    #
-    #   1. Test if it’s a new controller/action with new params
-    #   1. Hide the old view
-    #   2. Dispose the old controller
-    #   3. Instantiate the new controller, call the controller action
-    #   4. Show the new view
-    #
-    startupController: (controllerName, action = 'index', params = {}) ->
-      # Set default flags
+    # Whether to force the controller startup even
+    # if current and new controllers and params match
+    # Default to false unless explicitly set to true.
+    options.forceStartup = false unless options.forceStartup is true
 
-      # Whether to update the URL after controller startup
-      # Default to true unless explicitly set to false
-      if params.changeURL isnt false
-        params.changeURL = true
+    # Stop if the desired controller/action is already active
+    # with the same params.
+    return if not options.forceStartup and
+      @currentRoute?.controller is route.controller and
+      @currentRoute?.action is route.action and
+      _.isEqual @currentParams, params
 
-      # Whether to force the controller startup even
-      # when current and new controllers and params match
-      # Default to false unless explicitly set to true
-      if params.forceStartup isnt true
-        params.forceStartup = false
+    # Fetch the new controller, then go on.
+    @loadController route.controller, (Controller) =>
+      @controllerLoaded route, params, options, Controller
 
-      # Check if the desired controller is already active
-      isSameController =
-        not params.forceStartup and
-        @currentControllerName is controllerName and
-        @currentAction is action and
-        # Deep parameters check is not nice but the simplest way for now
-        (not @currentParams or _(params).isEqual(@currentParams))
+  # Load the constructor for a given controller name.
+  # The default implementation uses require() from a AMD module loader
+  # like RequireJS to fetch the constructor.
+  loadController: (name, handler) ->
+    fileName = utils.underscorize(name) + @settings.controllerSuffix
+    moduleName = @settings.controllerPath + fileName
+    if define?.amd
+      require [moduleName], handler
+    else
+      handler require moduleName
 
-      # Stop if it’s the same controller/action with the same params
-      return if isSameController
+  # Handler for the controller lazy-loading.
+  controllerLoaded: (route, params, options, Controller) ->
+    # Store the current route as the previous route.
+    @previousRoute = @currentRoute
 
-      # Fetch the new controller, then go on
-      handler = _(@controllerLoaded).bind(this, controllerName, action, params)
-      @loadController controllerName, handler
+    # Setup the current route object.
+    @currentRoute = _.extend {}, route, previous: utils.beget @previousRoute
 
-    # Load the constructor for a given controller name.
-    # The default implementation uses require() from a AMD module loader
-    # like RequireJS to fetch the constructor.
-    loadController: (controllerName, handler) ->
-      # Look for the controller in the module path specified by :: (ex. modules/mymodule::helloWorld#show)
-      [controllerRedirectionPath, controllerName] = controllerName.split('::') if controllerName.indexOf('::') isnt -1
-      controllerFileName = utils.underscorize(controllerName) + @settings.controllerSuffix
-      path = if controllerRedirectionPath? then controllerRedirectionPath + '/' else '' # Prefix module path
-      path += @settings.controllerPath + controllerFileName
-      if define?.amd
-        require [path], handler
-      else
-        handler require path
+    # Initialize the new controller.
+    controller = new Controller params, @currentRoute, options
 
-    # Handler for the controller lazy-loading
-    controllerLoaded: (controllerName, action, params, ControllerConstructor) ->
+    # Execute before actions if necessary.
+    methodName = if controller.beforeAction
+      'executeBeforeActions'
+    else
+      'executeAction'
+    this[methodName](controller, @currentRoute, params, options)
 
-      # Shortcuts for the old controller
-      currentControllerName = @currentControllerName or null
-      currentController     = @currentController     or null
+  executeAction: (controller, route, params, options) ->
+    # Dispose the previous controller.
+    if @currentController
+      # Notify the rest of the world beforehand.
+      @publishEvent 'beforeControllerDispose', @currentController
 
-      # Dispose the current controller
-      if currentController
-        # Notify the rest of the world beforehand
-        mediator.publish 'beforeControllerDispose', currentController
-        # Passing the params and the new controller name
-        currentController.dispose params, controllerName
+      # Passing new parameters that the action method will receive.
+      @currentController.dispose params, route, options
 
-      # Initialize the new controller
-      # Passing the params and the old controller name
-      controller = new ControllerConstructor params, currentControllerName
+    # Call the controller action with params and options.
+    controller[route.action] params, route, options
 
-      # Call the specific controller action
-      # Passing the params and the old controller name
-      controller[action] params, currentControllerName
+    # Save the new controller and its parameters.
+    @currentController = controller
+    @currentParams = params
 
-      # Stop if the action triggered a redirect
+    # Stop if the action triggered a redirect.
+    return if controller.redirected
+
+    # Adjust the URL.
+    @adjustURL route, params, options
+
+    # We're done! Spread the word!
+    @publishEvent 'dispatcher:dispatch', @currentController,
+      params, route, options
+
+  # Before actions with chained execution.
+  executeBeforeActions: (controller, route, params, options) ->
+    beforeActions = []
+
+    # Before actions can be extended by subclasses, so we need to check the
+    # whole prototype chain for matching before actions. Before actions in
+    # parent classes are executed before actions in child classes.
+    for actions in utils.getAllPropertyVersions controller, 'beforeAction'
+
+      # Iterate over the before actions in search for a matching
+      # name with the arguments’ action name.
+      for name, action of actions
+
+        # Do not add this object more than once.
+        if name is route.action or RegExp("^#{name}$").test route.action
+
+          if typeof action is 'string'
+            action = controller[action]
+
+          unless typeof action is 'function'
+            throw new Error 'Controller#executeBeforeActions: ' +
+              "#{action} is not a valid action method for #{name}."
+
+          # Save the before action.
+          beforeActions.push action
+
+    # Save returned value and also immediately return in case the value is false.
+    next = (method, previous = null) =>
+      # Stop if the action triggered a redirect.
       return if controller.redirected
 
-      # Save the new controller
-      @previousControllerName = currentControllerName
-      @currentControllerName = controllerName
-      @currentController = controller
-      @currentAction = action
-      @currentParams = params
+      # End of chain, finally start the action.
+      unless method
+        @executeAction controller, route, params, options
+        return
 
-      @adjustURL controller, params
+      # Execute the next before action.
+      previous = method.call controller, params, route, options, previous
 
-      # We're done! Spread the word!
-      mediator.publish 'startupController',
-        previousControllerName: @previousControllerName
-        controller: @currentController
-        controllerName: @currentControllerName
-        params: @currentParams
-
-    # Change the URL to the new controller using the router
-    adjustURL: (controller, params) ->
-      if params.path or params.path is ''
-        # Just use the matched path
-        url = params.path
-
-      else if typeof controller.historyURL is 'function'
-        # Use controller.historyURL to get the URL
-        # If the property is a function, call it
-        url = controller.historyURL params
-
-      else if typeof controller.historyURL is 'string'
-        # If the property is a string, read it
-        url = controller.historyURL
-
+      # Detect a CommonJS promise in order to use pipelining below,
+      # otherwise execute next method directly.
+      if previous and typeof previous.then is 'function'
+        previous.then (data) =>
+          # Execute as long as the currentController is
+          # the callee for this promise.
+          if not @currentController or controller is @currentController
+            next beforeActions.shift(), data
       else
-        throw new Error 'Dispatcher#adjustURL: controller for ' +
-          "#{@currentControllerName} does not provide a historyURL"
+        next beforeActions.shift(), previous
 
-      # Tell the router to actually change the current URL
-      if params.changeURL
-        mediator.publish '!router:changeURL', url
+    # Start beforeAction execution chain.
+    next beforeActions.shift()
 
-      # Save the URL
-      @url = url
+  # Change the URL to the new controller using the router.
+  adjustURL: (route, params, options) ->
+    return unless route.path?
 
-    # Disposal
-    # --------
+    # Tell the router to actually change the current URL.
+    url = route.path + if route.query then "?#{route.query}" else ""
+    @publishEvent '!router:changeURL', url, options if options.changeURL
 
-    disposed: false
+  # Disposal
+  # --------
 
-    dispose: ->
-      return if @disposed
+  disposed: false
 
-      @unsubscribeAllEvents()
+  dispose: ->
+    return if @disposed
 
-      @disposed = true
+    @unsubscribeAllEvents()
 
-      # You’re frozen when your heart’s not open
-      Object.freeze? this
+    @disposed = true
+
+    # You’re frozen when your heart’s not open.
+    Object.freeze? this

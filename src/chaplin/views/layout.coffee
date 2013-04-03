@@ -1,187 +1,272 @@
-define [
-  'jquery',
-  'underscore',
-  'backbone',
-  'chaplin/mediator',
-  'chaplin/lib/utils',
-  'chaplin/lib/subscriber'
-], ($, _, Backbone, mediator, utils, Subscriber) ->
-  'use strict'
+'use strict'
 
-  class Layout # This class does not extend View
+_ = require 'underscore'
+Backbone = require 'backbone'
+utils = require 'chaplin/lib/utils'
+EventBroker = require 'chaplin/lib/event_broker'
 
-    # Borrow the static extend method from Backbone
-    @extend = Backbone.Model.extend
+# Shortcut to access the DOM manipulation library.
+$ = Backbone.$
 
-    # Mixin a Subscriber
-    _(@prototype).extend Subscriber
+module.exports = class Layout # This class does not extend View.
 
-    # The site title used in the document title
-    # This should be set in your app-specific Application class
-    # and passed as an option
-    title: ''
+  # Borrow the static extend method from Backbone.
+  @extend = Backbone.Model.extend
 
-    # An hash to register events, like in Backbone.View
-    # It is only meant for events that are app-wide
-    # independent from any view
-    events: {}
+  # Mixin an EventBroker.
+  _(@prototype).extend EventBroker
 
-    # Register @el, @$el and @cid for delegating events
-    el: document
-    $el: $(document)
-    cid: 'chaplin-layout'
+  # The site title used in the document title.
+  # This should be set in your app-specific Application class
+  # and passed as an option.
+  title: ''
 
-    constructor: ->
-      @initialize arguments...
+  # An hash to register events, like in Backbone.View
+  # It is only meant for events that are app-wide
+  # independent from any view.
+  events: {}
 
-    initialize: (options = {}) ->
-      @title = options.title
-      @settings = _(options).defaults
-        routeLinks: true
-        # Per default, jump to the top of the page
-        scrollTo: [0, 0]
+  # Register @el, @$el and @cid for delegating events.
+  el: document
+  $el: $(document)
+  cid: 'chaplin-layout'
 
-      # Listen to global events: Starting and disposing of controllers
-      # Showing and hiding the main views
-      @subscribeEvent 'beforeControllerDispose', @hideOldView
-      @subscribeEvent 'startupController', @showNewView
-      # Adjust the document title to reflect the current controller
-      @subscribeEvent 'startupController', @adjustTitle
+  # Regions
+  # -------
 
-      # Set app wide event handlers
-      @delegateEvents()
+  # Region registration; see view documentation for more details.
+  regions: null
 
-      if @settings.routeLinks
-        @initLinkRouting()
+  # Collection of registered regions; all view regions are collected here.
+  _registeredRegions: null
 
-    # Take (un)delegateEvents from Backbone
-    # -------------------------------------
+  constructor: ->
+    @initialize arguments...
 
-    undelegateEvents: Backbone.View::undelegateEvents
-    delegateEvents: Backbone.View::delegateEvents
+    # Set app wide event handlers.
+    @delegateEvents()
 
-    # Controller startup and disposal
-    # -------------------------------
+    # Register all exposed regions.
+    @registerRegions this, @regions
 
-    # Handler for the global beforeControllerDispose event
-    hideOldView: (controller) ->
-      # Reset the scroll position
-      scrollTo = @settings.scrollTo
-      if scrollTo
-        window.scrollTo scrollTo[0], scrollTo[1]
+  initialize: (options = {}) ->
+    @title = options.title
+    @regions = options.regions if options.regions
+    @settings = _(options).defaults
+      titleTemplate: _.template("<%= subtitle %> \u2013 <%= title %>")
+      openExternalToBlank: false
+      routeLinks: 'a, .go-to'
+      skipRouting: '.noscript'
+      # Per default, jump to the top of the page.
+      scrollTo: [0, 0]
 
-      # Hide the current view
-      view = controller.view
-      if view
-        view.$el.css 'display', 'none'
+    @_registeredRegions = []
 
-    # Handler for the global startupController event
-    # Show the new view
-    showNewView: (context) ->
-      view = context.controller.view
-      if view
-        view.$el.css display: 'block', opacity: 1, visibility: 'visible'
+    @subscribeEvent 'beforeControllerDispose', @hideOldView
+    @subscribeEvent 'dispatcher:dispatch', @showNewView
+    @subscribeEvent '!adjustTitle', @adjustTitle
 
-    # Handler for the global startupController event
-    # Change the document title to match the new controller
-    # Get the title from the title property of the current controller
-    adjustTitle: (context) ->
-      title = @title
-      subtitle = context.controller.title
-      title = "#{subtitle} \u2013 #{title}" if subtitle
-      # Internet Explorer < 9 workaround
-      setTimeout (-> document.title = title), 50
+    @subscribeEvent '!region:show', @showRegion
+    @subscribeEvent '!region:register', @registerRegionHandler
+    @subscribeEvent '!region:unregister', @unregisterRegionHandler
 
+    # Set the app link routing.
+    @startLinkRouting() if @settings.routeLinks
 
-    # Automatic routing of internal links
-    # -----------------------------------
+  # Take (un)delegateEvents from Backbone
+  # -------------------------------------
+  delegateEvents: Backbone.View::delegateEvents
+  undelegateEvents: Backbone.View::undelegateEvents
+  $: Backbone.View::$
 
-    initLinkRouting: ->
-      # Handle links
-      $(document)
-        .on('click', '.go-to', @goToHandler)
-        .on('click', 'a', @openLink)
+  # Controller startup and disposal
+  # -------------------------------
 
-    stopLinkRouting: ->
-      $(document)
-        .off('click', '.go-to', @goToHandler)
-        .off('click', 'a', @openLink)
+  # Handler for the global beforeControllerDispose event.
+  hideOldView: (controller) ->
+    # Reset the scroll position.
+    scrollTo = @settings.scrollTo
+    if scrollTo
+      window.scrollTo scrollTo[0], scrollTo[1]
 
-    # Handle all clicks on A elements and try to route them internally
-    openLink: (event) =>
-      return if utils.modifierKeyPressed(event)
+    # Hide the current view.
+    view = controller.view
+    view.$el.hide() if view
 
-      el = event.currentTarget
-      $el = $(el)
-      href = $el.attr 'href'
-      # Ignore empty paths even if it is a valid relative URL
-      # Ignore links to fragment identifiers
-      return if href is '' or
-        href is undefined or
-        href.charAt(0) is '#' or
-        $el.hasClass('noscript')
+  # Handler for the global dispatcher:dispatch event.
+  # Show the new view.
+  showNewView: (controller) ->
+    view = controller.view
+    view.$el.show() if view
 
-      # Is it an external link?
-      currentHostname = location.hostname.replace('.', '\\.')
-      external = el.hostname isnt '' and
-        not ///#{currentHostname}$///i.test(el.hostname)
-      if external
-        # Open external links normally
-        # You might want to enforce opening in a new tab here:
-        #event.preventDefault()
-        #window.open el.href
-        return
+  # Handler for the global dispatcher:dispatch event.
+  # Change the document title to match the new controller.
+  # Get the title from the title property of the current controller.
+  adjustTitle: (subtitle = '') ->
+    title = @settings.titleTemplate {@title, subtitle}
 
-      # Try to route the link internally
+    # Internet Explorer < 9 workaround.
+    setTimeout (-> document.title = title), 50
 
-      # Get the path with query string
-      path = el.pathname + el.search
-      # Append a leading slash if necessary (Internet Explorer 8)
+  # Automatic routing of internal links
+  # -----------------------------------
+
+  startLinkRouting: ->
+    if @settings.routeLinks
+      $(document).on 'click', @settings.routeLinks, @openLink
+
+  stopLinkRouting: ->
+    if @settings.routeLinks
+      $(document).off 'click', @settings.routeLinks
+
+  isExternalLink: (link) ->
+    link.target is '_blank' or
+    link.rel is 'external' or
+    link.protocol not in ['http:', 'https:', 'file:'] or
+    link.hostname not in [location.hostname, '']
+
+  # Handle all clicks on A elements and try to route them internally.
+  openLink: (event) =>
+    return if utils.modifierKeyPressed(event)
+
+    el = event.currentTarget
+    $el = $(el)
+    isAnchor = el.nodeName is 'A'
+
+    # Get the href and perform checks on it.
+    href = $el.attr('href') or $el.data('href') or null
+
+    # Basic href checks.
+    return if href is null or href is undefined or
+      # Technically an empty string is a valid relative URL
+      # but it doesn’t make sense to route it.
+      href is '' or
+      # Exclude fragment links.
+      href.charAt(0) is '#'
+
+    # Apply skipRouting option.
+    skipRouting = @settings.skipRouting
+    type = typeof skipRouting
+    return if type is 'function' and not skipRouting(href, el) or
+      type is 'string' and $el.is skipRouting
+
+    # Handle external links.
+    external = isAnchor and @isExternalLink el
+    if external
+      if @settings.openExternalToBlank
+        # Open external links normally in a new tab.
+        event.preventDefault()
+        window.open el.href
+      return
+
+    if isAnchor
+      path = el.pathname
+      queryString = el.search.substring 1
+      # Append leading slash for IE8.
       path = "/#{path}" if path.charAt(0) isnt '/'
+    else
+      [path, queryString] = href.split '?'
+      queryString ?= ''
 
-      # Pass to the router, try to route internally
-      mediator.publish '!router:route', path, (routed) ->
-        # Prevent default handling if the URL could be routed
-        event.preventDefault() if routed
-        # Otherwise navigate to the URL normally
+    # Create routing options and callback.
+    options = {queryString}
+    callback = (routed) ->
+      # Prevent default handling if the URL could be routed.
+      if routed
+        event.preventDefault()
+      else unless isAnchor
+        location.href = path
+      return
 
-    # Not only A elements might act as internal links,
-    # every element might have:
-    # class="go-to" data-href="/something"
-    goToHandler: (event) ->
-      el = event.currentTarget
+    # Pass to the router, try to route the path internally.
+    @publishEvent '!router:route', path, options, callback
+    return
 
-      # Do not handle A elements
-      return if event.nodeName is 'A'
+  # Region management
+  # -----------------
 
-      path = $(el).data('href')
-      # Ignore empty path even if it is a valid relative URL
-      return unless path
+  # Handler for `!region:register`.
+  # Register a single view region or all regions exposed.
+  registerRegionHandler: (instance, name, selector) ->
+    if name?
+      @registerRegion instance, name, selector
+    else
+      @registerRegions instance
 
-      # Pass to the router, try to route internally
-      mediator.publish '!router:route', path, (routed) ->
-        if routed
-          # Prevent default handling if the URL could be routed
-          event.preventDefault()
-        else
-          # Navigate to the URL normally
-          location.href = path
+  # Registering one region bound to a view.
+  registerRegion: (instance, name, selector) ->
+    # Remove the region if there was already one registered perhaps by
+    # a base class.
+    @unregisterRegion instance, name
 
-    # Disposal
-    # --------
+    # Place this region registration into the regions array.
+    @_registeredRegions.unshift {instance, name, selector}
 
-    disposed: false
+  # Triggered by view; passed in the regions hash.
+  # Simply register all regions exposed by it.
+  registerRegions: (instance) ->
+    # Regions can be be extended by subclasses, so we need to check the
+    # whole prototype chain for matching regions. Regions registered by the
+    # more-derived class overwrites the region registered by the less-derived
+    # class.
+    for version in utils.getAllPropertyVersions instance, 'regions'
+      for selector, name of version
+        @registerRegion instance, name, selector
+    # Return nothing.
+    return
 
-    dispose: ->
-      return if @disposed
+  # Handler for `!region:unregister`.
+  # Unregisters single named region or all view regions.
+  unregisterRegionHandler: (instance, name) ->
+    if name?
+      @unregisterRegion instance, name
+    else
+      @unregisterRegions instance
 
-      @stopLinkRouting()
-      @unsubscribeAllEvents()
-      @undelegateEvents()
+  # Unregisters a specific named region from a view.
+  unregisterRegion: (instance, name) ->
+    cid = instance.cid
+    @_registeredRegions = _.filter @_registeredRegions, (region) ->
+      region.instance.cid isnt cid or region.name isnt name
 
-      delete @title
+  # When views are disposed; remove all their registered regions.
+  unregisterRegions: (instance) ->
+    @_registeredRegions = _.filter @_registeredRegions, (region) ->
+      region.instance.cid isnt instance.cid
 
-      @disposed = true
+  # When views are instantiated and request for a region assignment;
+  # attempt to fulfill it.
+  showRegion: (name, instance) ->
+    # Find an appropriate region.
+    region = _.find @_registeredRegions, (region) ->
+      region.name is name and not region.instance.stale
 
-      # You’re frozen when your heart’s not open
-      Object.freeze? this
+    # Assert that we got a valid region.
+    throw new Error "No region registered under #{name}" unless region
+
+    # Apply the region selector.
+    instance.container = if region.selector is ''
+      region.instance.$el
+    else
+      region.instance.$ region.selector
+
+  # Disposal
+  # --------
+
+  disposed: false
+
+  dispose: ->
+    return if @disposed
+
+    delete @regions
+
+    @stopLinkRouting()
+    @unsubscribeAllEvents()
+    @undelegateEvents()
+
+    delete @title
+
+    @disposed = true
+
+    # You’re frozen when your heart’s not open.
+    Object.freeze? this

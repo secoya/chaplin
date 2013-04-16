@@ -6,6 +6,11 @@ EventBroker = require 'chaplin/lib/event_broker'
 Controller = require 'chaplin/controllers/controller'
 
 module.exports = class Route
+
+  ###
+  # THERE is a hack in this file :102
+  ###
+
   # Borrow the static extend method from Backbone.
   @extend = Backbone.Model.extend
 
@@ -91,6 +96,9 @@ module.exports = class Route
 
     # Create the actual regular expression, match until the end of the URL or
     # the begin of query string.
+
+    # HACK!!!!!!!!!
+    # Made some a change to support trailing slash.
     @regExp = ///^#{pattern}(?=(/?[?])|(/?$))///
 
   addParamName: (match, paramName) =>

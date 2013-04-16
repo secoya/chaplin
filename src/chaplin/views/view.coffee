@@ -9,6 +9,16 @@ EventBroker = require 'chaplin/lib/event_broker'
 $ = Backbone.$
 
 module.exports = class View extends Backbone.View
+
+  ###
+  # HACK!!! There is several hacks in this file.
+  # :79-82 added some properties concerning, attaching views.
+  # :112 Listener in constructor, that listens to added to DOM for setting the @_addedToDOM property.
+  # :362 @attachView()
+  # :394 @triggerAddedToDOM()
+  # :397 @onceAddedToDOM()
+  ###
+
   # Mixin an EventBroker.
   _(@prototype).extend EventBroker
 

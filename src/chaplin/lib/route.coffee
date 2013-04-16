@@ -91,7 +91,7 @@ module.exports = class Route
 
     # Create the actual regular expression, match until the end of the URL or
     # the begin of query string.
-    @regExp = ///^#{pattern}(?=\?|$)///
+    @regExp = ///^#{pattern}(?=(/?[?])|(/?$))///
 
   addParamName: (match, paramName) =>
     # Save parameter name.

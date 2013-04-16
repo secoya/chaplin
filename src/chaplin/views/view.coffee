@@ -63,6 +63,14 @@ module.exports = class View extends Backbone.View
   subviews: null
   subviewsByName: null
 
+  # DOM events
+  # --------
+
+  # Flag whether we're added to the DOM or not.
+  _addedToDOM: true
+  # Allowed methods to attach a view.
+  _allowedAttachMethods: ['prepend', 'append', 'before', 'after']
+
   # State
   # -----
 
@@ -91,6 +99,7 @@ module.exports = class View extends Backbone.View
       # Return the view.
       this
 
+    @on 'addedToDOM', () => @_addedToDOM = true
     # Call Backbone’s constructor.
     super
 
@@ -340,6 +349,25 @@ module.exports = class View extends Backbone.View
     # Return the view.
     this
 
+  attachView: (view, selector = @$el, method = 'append') ->
+    if arguments.length == 2 and @_allowedAttachMethods.indexOf(selector) isnt -1
+      method = selector
+      selector = @$el
+
+    if @_allowedAttachMethods.indexOf(method) is -1
+      throw new Error 'The jQuery method must be one of '+@_allowedAttachMethods
+
+    if selector instanceof $
+      selector[method] view.$el
+    else
+      @$(selector)[method] view.$el
+
+    # Propagate addedToDom event
+    if @_addedToDOM
+      @triggerAddedToDOM(view)
+    else
+      @on 'addedToDOM', -> @triggerAddedToDOM(view)
+
   # This method is called after a specific `render` of a derived class.
   attach: ->
     # Attempt to bind this view to its named region.
@@ -351,6 +379,19 @@ module.exports = class View extends Backbone.View
       $(@container)[@containerMethod] @el
       # Trigger an event.
       @trigger 'addedToDOM'
+
+  # Helper method to trigger the added to dom event
+  triggerAddedToDOM: (view = @) ->
+    view.trigger 'addedToDOM'
+
+  onceAddedToDOM: (callback) ->
+    if @_addedToDOM
+      callback.call @
+    else
+      fn = () =>
+        @off 'addedToDOM', fn
+        callback.call @
+      @on 'addedToDOM', fn
 
   # Disposal
   # --------

@@ -383,18 +383,18 @@ module.exports = class CollectionView extends View
       unless children.get(position) is viewEl
         if isEnd childrenLength
           # Insert at the end.
-          $list.append viewEl
+          @attachView view, $list, 'append'
         else
           # Insert at the right position.
           if position is 0
             $next = children.eq position
-            $next.before viewEl
+            @attachView view, $next, 'before'
           else
             $previous = children.eq position - 1
-            $previous.after viewEl
+            @attachView view, $previous, 'after'
     else
       method = if isEnd length then 'append' else 'prepend'
-      $list[method] viewEl
+      @attachView view, $list, method
 
     # Tell the view that it was added to its parent.
     view.trigger 'addedToParent'

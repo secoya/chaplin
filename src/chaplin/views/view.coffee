@@ -77,7 +77,7 @@ module.exports = class View extends Backbone.View
   # --------
 
   # Flag whether we're added to the DOM or not.
-  _addedToDOM: true
+  _addedToDOM: false
   # Allowed methods to attach a view.
   _allowedAttachMethods: ['prepend', 'append', 'before', 'after']
 
@@ -402,6 +402,10 @@ module.exports = class View extends Backbone.View
         @off 'addedToDOM', fn
         callback.call @
       @on 'addedToDOM', fn
+
+  attachToDOM: (selector, method = 'append')->
+    $(selector)[method] @$el
+    @triggerAddedToDOM()
 
   # Disposal
   # --------

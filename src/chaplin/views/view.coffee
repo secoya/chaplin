@@ -377,6 +377,7 @@ module.exports = class View extends Backbone.View
       @triggerAddedToDOM(view)
     else
       @on 'addedToDOM', -> @triggerAddedToDOM(view)
+    view
 
   # This method is called after a specific `render` of a derived class.
   attach: ->

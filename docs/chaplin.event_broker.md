@@ -1,24 +1,26 @@
-# [Chaplin.EventBroker](src/chaplin/lib/event_broker.coffee)
+---
+layout: default
+title: Chaplin.EventBroker
+module_path: src/chaplin/lib/event_broker.coffee
+Chaplin: EventBroker
+---
 
-The EventBroker offer an interface to interact with [Chaplin.mediator](./chaplin.mediator.md). As of Backbone 0.9.2, the broker just serves the purpose that a handler cannot be registered twice for the same event.
+The `EventBroker` offers an interface to interact with [Chaplin.mediator](./chaplin.mediator.html), meant to be used as a mixin.
 
-## Methods of `Chaplin.EventBroker`
+<h2 id="methods">Methods</h2>
 
-### publishEvent(event, arguments...)
-Publish the global `event` with `arguments`.
+<h3 class="module-member" id="publishEvent">publishEvent(event, arguments...)</h3>
+Publishes `event` globablly, passing `arguments` along for interested subscribers.
 
+<h3 class="module-member" id="subscribeEvent">subscribeEvent(event, handler)</h3>
+Subscribes the `handler` to the given `event`. If `handler` already subscribed to `event`, it will be removed as a subscriber and added afresh. This function is like `Chaplin.mediator.subscribe` except it cannot subscribe twice.
 
-### subscribeEvent(event, handler)
-Unsubcribe the `handler` to the `event` (if it exists) before subscribing it. It is like `Chaplin.mediator.subscribe` except it cannot subscribe twice.
+<h3 class="module-member" id="unsubscribeEvent">unsubscribeEvent(event, handler)</h3>
+Unsubcribe the `handler` from the `event`. This functions like `Chaplin.mediator.unsubscribe`.
 
-
-### unsubscribeEvent(event, handler)
-Unsubcribe the `handler` to the `event`. It is like `Chaplin.mediator.unsubscribe`.
-
-
-### unsubscribeAllEvents()
-Unsubcribe all handlers for all events.
+<h3 class="module-member" id="unsubscribeAllEvents">unsubscribeAllEvents()</h3>
+Unsubcribe from any subscriptions made through this objects `subscribeEvent` method.
 
 ## Usage
 
-To give a Class the Pub/Sub pattern, you just need to make it extend the Chaplin.EventBroker: `_(@prototype).extend EventBroker` (coffee) or `_(this.prototype).extend(EventBroker)` (js).
+To give a class these pub/sub capabilities, you just need to make it extend `Chaplin.EventBroker`: <span class="coffeescript">`_.extend @prototype, EventBroker`</span> <span class="javascript">`_.extend(this.prototype, EventBroker)`</span>.

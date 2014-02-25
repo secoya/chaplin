@@ -4,6 +4,8 @@ _ = require 'underscore'
 Backbone = require 'backbone'
 EventBroker = require 'chaplin/lib/event_broker'
 
+has = Object::hasOwnProperty
+
 # Composition
 # -----------
 
@@ -16,8 +18,8 @@ module.exports = class Composition
   @extend = Backbone.Model.extend
 
   # Mixin Backbone events and EventBroker.
-  _(@prototype).extend Backbone.Events
-  _(@prototype).extend EventBroker
+  _.extend @prototype, Backbone.Events
+  _.extend @prototype, EventBroker
 
   # The item that is composed; this is by default a reference to this.
   item: null
@@ -29,7 +31,7 @@ module.exports = class Composition
   _stale: false
 
   constructor: (options) ->
-    @options = _.clone options if options?
+    @options = _.extend {}, options if options?
     @item = this
     @initialize @options
 
@@ -43,7 +45,8 @@ module.exports = class Composition
   # The check method is called when this composition is asked to be
   # composed again. The passed options are the newly passed options.
   # If this returns false then the composition is re-composed.
-  check: (options) -> return _.isEqual @options, options
+  check: (options) ->
+    _.isEqual @options, options
 
   # Marks all applicable items as stale.
   stale: (value) ->
@@ -52,7 +55,10 @@ module.exports = class Composition
 
     # Sets the stale property for every item in the composition that has it.
     @_stale = value
-    for name, item of this when item and item isnt this and _(item).has 'stale'
+    for name, item of this when (
+      item and item isnt this and
+      typeof item is 'object' and has.call(item, 'stale')
+    )
       item.stale = value
 
     # Return nothing.

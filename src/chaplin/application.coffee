@@ -1,13 +1,20 @@
 'use strict'
 
+# Third-party libraries.
 _ = require 'underscore'
 Backbone = require 'backbone'
-mediator = require 'chaplin/mediator'
+
+# JavaScript classes which are instantiated with `new`
 Dispatcher = require 'chaplin/dispatcher'
 Layout = require 'chaplin/views/layout'
 Composer = require 'chaplin/composer'
 Router = require 'chaplin/lib/router'
+
+# A mix-in that should be mixed to class.
 EventBroker = require 'chaplin/lib/event_broker'
+
+# Independent global event bus that is used by itself, so lowercased.
+mediator = require 'chaplin/mediator'
 
 # The bootstrapper is the entry point for Chaplin apps.
 module.exports = class Application
@@ -15,7 +22,7 @@ module.exports = class Application
   @extend = Backbone.Model.extend
 
   # Mixin an `EventBroker` for **publish/subscribe** functionality.
-  _(@prototype).extend EventBroker
+  _.extend @prototype, EventBroker
 
   # Site-wide title that is mapped to HTML `title` tag.
   title: ''
@@ -28,8 +35,41 @@ module.exports = class Application
   layout: null
   router: null
   composer: null
+  started: false
 
-  initialize: ->
+  constructor: (options = {}) ->
+    @initialize options
+
+  initialize: (options = {}) ->
+    # Check if app is already started.
+    if @started
+      throw new Error 'Application#initialize: App was already started'
+
+    # Initialize core components.
+    # ---------------------------
+
+    # Register all routes.
+    # You might pass Router/History options as the second parameter.
+    # Chaplin enables pushState per default and Backbone uses / as
+    # the root per default. You might change that in the options
+    # if necessary:
+    # @initRouter routes, pushState: false, root: '/subdir/'
+    @initRouter options.routes, options
+
+    # Dispatcher listens for routing events and initialises controllers.
+    @initDispatcher options
+
+    # Layout listens for click events & delegates internal links to router.
+    @initLayout options
+
+    # Composer grants the ability for views and stuff to be persisted.
+    @initComposer options
+
+    # Mediator is a global message broker which implements pub / sub pattern.
+    @initMediator()
+
+    # Start the application.
+    @start()
 
   # **Chaplin.Dispatcher** sits between the router and controllers to listen
   # for routing events. When they occur, Chaplin.Dispatcher loads the target
@@ -53,6 +93,15 @@ module.exports = class Application
   initComposer: (options = {}) ->
     @composer = new Composer options
 
+  # **Chaplin.mediator** is a singleton that serves as the sole communication
+  # channel for all parts of the application. It should be sealed so that its
+  # misuse as a kitchen sink is prohibited. If you do want to give modules
+  # access to some shared resource, however, add it here before sealing the
+  # mediator.
+
+  initMediator: ->
+    mediator.seal()
+
   # **Chaplin.Router** is responsible for observing URL changes. The router
   # is a replacement for Backbone.Router and *does not inherit from it*
   # directly. It's a different implementation with several advantages over
@@ -67,9 +116,16 @@ module.exports = class Application
     # Register any provided routes.
     routes? @router.match
 
-  startRouting: ->
+  # Can be customized when overridden.
+  start: ->
     # After registering the routes, start **Backbone.history**.
     @router.startHistory()
+
+    # Mark app as initialized.
+    @started = true
+
+    # Freeze the application instance to prevent further changes.
+    Object.freeze? this
 
   # Disposal
   # --------
@@ -82,7 +138,6 @@ module.exports = class Application
     properties = ['dispatcher', 'layout', 'router', 'composer']
     for prop in properties when this[prop]?
       this[prop].dispose()
-      delete this[prop]
 
     @disposed = true
 

@@ -3,14 +3,16 @@
 _ = require 'underscore'
 Backbone = require 'backbone'
 EventBroker = require 'chaplin/lib/event_broker'
+utils = require 'chaplin/lib/utils'
+mediator = require 'chaplin/mediator'
 
 module.exports = class Controller
   # Borrow the static extend method from Backbone.
   @extend = Backbone.Model.extend
 
   # Mixin Backbone events and EventBroker.
-  _(@prototype).extend Backbone.Events
-  _(@prototype).extend EventBroker
+  _.extend @prototype, Backbone.Events
+  _.extend @prototype, EventBroker
 
   view: null
 
@@ -24,42 +26,33 @@ module.exports = class Controller
   initialize: ->
     # Empty per default.
 
+  beforeAction: ->
+    # Empty per default.
+
   # Change document title.
   adjustTitle: (subtitle) ->
-    @publishEvent '!adjustTitle', subtitle
+    mediator.execute 'adjustTitle', subtitle
 
   # Composer
   # --------
 
   # Convenience method to publish the `!composer:compose` event. See the
   # composer for information on parameters, etc.
-  compose: (name, second, third) ->
-    if arguments.length is 1
-      # Retrieve an active composition using the retrieve event.
-      item = null
-      @publishEvent '!composer:retrieve', name, (composition) ->
-        item = composition
-      item
-    else
-      # Compose the arguments using the compose method.
-      @publishEvent '!composer:compose', name, second, third
+  reuse: (name) ->
+    method = if arguments.length is 1 then 'retrieve' else 'compose'
+    mediator.execute "composer:#{method}", arguments...
+
+  # Deprecated method.
+  compose: ->
+    throw new Error 'Controller#compose was moved to Controller#reuse'
 
   # Redirection
   # -----------
 
   # Redirect to URL.
-  redirectTo: (url, options = {}) ->
+  redirectTo: (pathDesc, params, options) ->
     @redirected = true
-    @publishEvent '!router:route', url, options, (routed) ->
-      unless routed
-        throw new Error 'Controller#redirectTo: no route matched'
-
-  # Redirect to named route.
-  redirectToRoute: (name, params, options) ->
-    @redirected = true
-    @publishEvent '!router:routeByName', name, params, options, (routed) ->
-      unless routed
-        throw new Error 'Controller#redirectToRoute: no route matched'
+    utils.redirectTo pathDesc, params, options
 
   # Disposal
   # --------
@@ -79,10 +72,6 @@ module.exports = class Controller
 
     # Unbind all referenced handlers.
     @stopListening()
-
-    # Remove properties which are not disposable.
-    properties = ['redirected']
-    delete this[prop] for prop in properties
 
     # Finished.
     @disposed = true

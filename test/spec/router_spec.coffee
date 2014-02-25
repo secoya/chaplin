@@ -1,23 +1,16 @@
 define [
   'backbone'
   'underscore'
+  'chaplin/lib/utils'
   'chaplin/mediator'
   'chaplin/lib/router'
   'chaplin/lib/route'
-], (Backbone, _, mediator, Router, Route) ->
+], (Backbone, _, utils, mediator, Router, Route) ->
   'use strict'
 
   describe 'Router and Route', ->
     # Initialize shared variables
     router = passedRoute = passedParams = passedOptions = null
-
-    # Serialize pairs into query string (without leading question mark)
-    serializequery = (pairs) ->
-      _(pairs).reduce((memo, val, prop) ->
-        memo +
-        (if memo is '' then '' else '&') +
-        encodeURIComponent(prop) + '=' + encodeURIComponent(val)
-      , '')
 
     # router:match handler to catch the arguments
     routerMatch = (_route, _params, _options) ->
@@ -86,8 +79,8 @@ define [
         expect(route).to.be.a Route
 
       it 'should reject reserved controller action names', ->
-      for prop in ['constructor', 'initialize', 'redirectTo', 'dispose']
-        expect(-> router.match '', "null##{prop}").to.throwError()
+        for prop in ['constructor', 'initialize', 'redirectTo', 'dispose']
+          expect(-> router.match '', "null##{prop}").to.throwError()
 
       it 'should allow specifying controller and action in options', ->
         # Signature: url, 'controller#action', options
@@ -116,6 +109,21 @@ define [
           router.match 'url', {}
         ).to.throwError()
 
+      it 'should pass trailing option from Router by default', ->
+        url = 'url'
+        target = 'c#a'
+
+        route = router.match url, target
+        expect(route.options.trailing).to.be router.options.trailing
+
+        router.options.trailing = true
+
+        route = router.match url, target
+        expect(route.options.trailing).to.be true
+
+        route = router.match url, target, trailing: null
+        expect(route.options.trailing).to.be null
+
     describe 'Routing', ->
 
       it 'should fire a router:match event when a route matches', ->
@@ -123,18 +131,47 @@ define [
         mediator.subscribe 'router:match', spy
         router.match '', 'null#null'
 
-        router.route '/'
+        router.route url: '/'
         expect(spy).was.called()
 
-      it 'should match correctly', ->
+      it 'should match route names, both default and custom', ->
+        spy = sinon.spy()
+        mediator.subscribe 'router:match', spy
+        router.match 'correct-match1', 'controller#action'
+        router.match 'correct-match2', 'null#null', name: 'routeName'
+
+        routed1 = router.route 'controller#action'
+        routed2 = router.route 'routeName'
+
+        expect(routed1 and routed2).to.be true
+        expect(spy).was.calledTwice()
+
+        mediator.unsubscribe 'router:match', spy
+
+      it 'should match URLs correctly', ->
         spy = sinon.spy()
         mediator.subscribe 'router:match', spy
         router.match 'correct-match1', 'null#null'
         router.match 'correct-match2', 'null#null'
 
-        routed = router.route '/correct-match1'
+        routed = router.route url: '/correct-match1'
         expect(routed).to.be true
         expect(spy).was.calledOnce()
+
+        mediator.unsubscribe 'router:match', spy
+
+      it 'should match configuration objects', ->
+        spy = sinon.spy()
+        mediator.subscribe 'router:match', spy
+        router.match 'correct-match', 'null#null'
+        router.match 'correct-match-with-name', 'null#null', name: 'null'
+        router.match 'correct-match-with/:named_param', 'null#null', name: 'with-param'
+
+        routed1 = router.route controller: 'null', action: 'null'
+        routed2 = router.route name: 'null'
+
+        expect(routed1 and routed2).to.be true
+        expect(spy).was.calledTwice()
 
         mediator.unsubscribe 'router:match', spy
 
@@ -145,7 +182,7 @@ define [
         subdirRooter.match 'correct-match1', 'null#null'
         subdirRooter.match 'correct-match2', 'null#null'
 
-        routed = subdirRooter.route '/subdir/correct-match1'
+        routed = subdirRooter.route url: '/subdir/correct-match1'
         expect(routed).to.be true
         expect(spy).was.calledOnce()
 
@@ -158,7 +195,7 @@ define [
         router.match 'params/:one', 'null#null'
         router.match 'params/:two', 'null#null'
 
-        routed = router.route '/params/1'
+        routed = router.route url: '/params/1'
 
         expect(routed).to.be true
         expect(spy).was.calledOnce()
@@ -185,28 +222,76 @@ define [
 
         mediator.unsubscribe 'router:match', spy
 
+      it 'should identically match URLs that differ only by trailing slash', ->
+        router.match 'url', 'null#null'
+
+        routed = router.route url: 'url/'
+        expect(routed).to.be true
+
+        routed = router.route url: 'url/?'
+        expect(routed).to.be true
+
+        routed = router.route url: 'url/?key=val'
+        expect(routed).to.be true
+
+      it 'should leave trailing slash accordingly to current options', ->
+        router.match 'url', 'null#null', trailing: null
+        routed = router.route url: 'url/'
+        expect(routed).to.be true
+        expect(passedRoute).to.be.an 'object'
+        expect(passedRoute.path).to.be 'url/'
+
+      it 'should remove trailing slash accordingly to current options', ->
+        router.match 'url', 'null#null', trailing: false
+        routed = router.route url: 'url/'
+        expect(routed).to.be true
+        expect(passedRoute).to.be.an 'object'
+        expect(passedRoute.path).to.be 'url'
+
+      it 'should add trailing slash accordingly to current options', ->
+        router.match 'url', 'null#null', trailing: true
+        routed = router.route url: 'url'
+        expect(routed).to.be true
+        expect(passedRoute).to.be.an 'object'
+        expect(passedRoute.path).to.be 'url/'
+
     describe 'Passing the Route', ->
 
       it 'should pass the route to the router:match handler', ->
         router.match 'passing-the-route', 'controller#action'
-        router.route '/passing-the-route'
+        router.route 'controller#action'
         expect(passedRoute).to.be.an 'object'
         expect(passedRoute.path).to.be 'passing-the-route'
         expect(passedRoute.controller).to.be 'controller'
         expect(passedRoute.action).to.be 'action'
 
+      it 'should handle optional parameters', ->
+        router.match 'items(/missing/:missing)(/present/:present)', 'controller#action'
+        router.route url: '/items/present/1'
+        expect(passedRoute).to.be.an 'object'
+        expect(passedRoute.path).to.be 'items/present/1'
+        expect(passedRoute.controller).to.be 'controller'
+        expect(passedRoute.action).to.be 'action'
+
     describe 'Passing the Parameters', ->
 
-      it 'should extract named parameters', ->
+      it 'should extract named parameters from URL', ->
         router.match 'params/:one/:p_two_123/three', 'null#null'
-        router.route '/params/123-foo/456-bar/three'
+        router.route url: '/params/123-foo/456-bar/three'
+        expect(passedParams).to.be.an 'object'
+        expect(passedParams.one).to.be '123-foo'
+        expect(passedParams.p_two_123).to.be '456-bar'
+
+      it 'should extract named parameters from object', ->
+        router.match 'params/:one/:p_two_123/three', 'controller#action'
+        router.route 'controller#action', one: '123-foo', p_two_123: '456-bar'
         expect(passedParams).to.be.an 'object'
         expect(passedParams.one).to.be '123-foo'
         expect(passedParams.p_two_123).to.be '456-bar'
 
       it 'should extract non-ascii named parameters', ->
         router.match 'params/:one/:two/:three/:four', 'null#null'
-        router.route "/params/o_O/*.*/ü~ö~ä/#{encodeURIComponent('éêè')}"
+        router.route url: "/params/o_O/*.*/ü~ö~ä/#{encodeURIComponent('éêè')}"
         expect(passedParams).to.be.an 'object'
         expect(passedParams.one).to.be 'o_O'
         expect(passedParams.two).to.be '*.*'
@@ -215,31 +300,68 @@ define [
 
       it 'should match splat parameters', ->
         router.match 'params/:one/*two', 'null#null'
-        router.route '/params/123-foo/456-bar/789-qux'
+        router.route url: '/params/123-foo/456-bar/789-qux'
         expect(passedParams).to.be.an 'object'
         expect(passedParams.one).to.be '123-foo'
         expect(passedParams.two).to.be '456-bar/789-qux'
 
       it 'should match splat parameters at the beginning', ->
         router.match 'params/*one/:two', 'null#null'
-        router.route '/params/123-foo/456-bar/789-qux'
+        router.route url: '/params/123-foo/456-bar/789-qux'
         expect(passedParams).to.be.an 'object'
         expect(passedParams.one).to.be '123-foo/456-bar'
         expect(passedParams.two).to.be '789-qux'
 
       it 'should match splat parameters before a named parameter', ->
         router.match 'params/*one:two', 'null#null'
-        router.route '/params/123-foo/456-bar/789-qux'
+        router.route url: '/params/123-foo/456-bar/789-qux'
         expect(passedParams).to.be.an 'object'
         expect(passedParams.one).to.be '123-foo/456-bar/'
         expect(passedParams.two).to.be '789-qux'
+
+      it 'should match optional named parameters', ->
+        router.match 'items/:type(/page/:page)(/min/:min/max/:max)', 'null#null'
+
+        router.route url: '/items/clothing'
+        expect(passedParams).to.be.an 'object'
+        expect(passedParams.type).to.be 'clothing'
+        expect(passedParams.page).to.be undefined
+        expect(passedParams.min).to.be undefined
+        expect(passedParams.max).to.be undefined
+
+        router.route url: '/items/clothing/page/5'
+        expect(passedParams).to.be.an 'object'
+        expect(passedParams.type).to.be 'clothing'
+        expect(passedParams.page).to.be '5'
+        expect(passedParams.min).to.be undefined
+        expect(passedParams.max).to.be undefined
+
+        router.route url: '/items/clothing/min/10/max/20'
+        expect(passedParams).to.be.an 'object'
+        expect(passedParams.type).to.be 'clothing'
+        expect(passedParams.page).to.be undefined
+        expect(passedParams.min).to.be '10'
+        expect(passedParams.max).to.be '20'
+
+      it 'should match optional splat parameters', ->
+        router.match 'items(/*slug)', 'null#null'
+
+        routed = router.route url: '/items'
+        expect(routed).to.be true
+        expect(passedParams).to.be.an 'object'
+        expect(passedParams.slug).to.be undefined
+
+        routed = router.route url: '/items/5-boots'
+        expect(routed).to.be true
+        expect(passedParams).to.be.an 'object'
+        expect(passedParams.slug).to.be '5-boots'
 
       it 'should pass fixed parameters', ->
         router.match 'fixed-params/:id', 'null#null',
           params:
             foo: 'bar'
 
-        router.route '/fixed-params/123'
+        router.route url: '/fixed-params/123'
         expect(passedParams).to.be.an 'object'
         expect(passedParams.id).to.be '123'
         expect(passedParams.foo).to.be 'bar'
@@ -249,21 +371,22 @@ define [
           params:
             foo: 'bar'
 
-        router.route '/conflicting-params/123'
+        router.route url: '/conflicting-params/123'
         expect(passedParams.foo).to.be 'bar'
 
       it 'should impose parameter constraints', ->
         spy = sinon.spy()
         mediator.subscribe 'router:match', spy
-        router.match 'constraints/:id', 'null#null',
+        router.match 'constraints/:id', 'controller#action',
           constraints:
             id: /^\d+$/
 
-        router.route '/constraints/123-foo'
-        expect(spy).was.notCalled()
+        expect(-> router.route url: '/constraints/123-foo').to.throwError()
+        expect(-> router.route 'controller#action', id: '123-foo').to.throwError()
 
-        router.route '/constraints/123'
-        expect(spy).was.called()
+        router.route url: '/constraints/123'
+        router.route 'controller#action', id: 123
+        expect(spy).was.calledTwice()
 
         mediator.unsubscribe 'router:match', spy
 
@@ -271,6 +394,15 @@ define [
         expect(-> router.match /url/, 'null#null').to.throwError()
 
     describe 'Route Matching', ->
+
+      it 'should not initialize when route name has "#"', ->
+        expect(->
+          new Route 'params', 'null', 'null', name: 'null#null'
+        ).to.throwError()
+      it 'should not initialize when using existing controller attr', ->
+        expect(->
+          new Route 'params', 'null', 'beforeAction'
+        ).to.throwError()
 
       it 'should compare route value', ->
         route = new Route 'params', 'hello', 'world'
@@ -311,11 +443,55 @@ define [
         url = route.reverse [32, 156, 'someone/out/there', 'meh']
         expect(url).to.be 'params/32/156/someone/out/there/meh'
 
+      it 'should allow for reversing optional route params', ->
+        route = new Route 'items/:id(/page/:page)(/sort/:sort)', 'null', 'null'
+        url = route.reverse id: 5, page: 2, sort: 'price'
+        expect(url).to.be 'items/5/page/2/sort/price'
+
+        route = new Route 'items/:id(/page/:page/sort/:sort)', 'null', 'null'
+        url = route.reverse id: 5, page: 2, sort: 'price'
+        expect(url).to.be 'items/5/page/2/sort/price'
+
+      it 'should allow for reversing a route instance with optional splats', ->
+        route = new Route 'items/:id(-*slug)', 'null', 'null'
+        url = route.reverse id: 5, slug: "shirt"
+        expect(url).to.be 'items/5-shirt'
+
+      it 'should handle partial fulfillment of optional portions', ->
+        route = new Route 'items/:id(/page/:page)(/sort/:sort)', 'null', 'null'
+        url = route.reverse id: 5, page: 2
+        expect(url).to.be 'items/5/page/2'
+
+        route = new Route 'items/:id(/page/:page/sort/:sort)', 'null', 'null'
+        url = route.reverse id: 5, page: 2
+        expect(url).to.be 'items/5'
+
+      it 'should handle partial fulfillment of optional splats', ->
+        route = new Route 'items/:id(-*slug)(/:section)', 'null', 'null'
+        url = route.reverse id: 5, section: 'comments'
+        expect(url).to.be 'items/5/comments'
+        url = route.reverse id: 5, slug: 'boots'
+        expect(url).to.be 'items/5-boots'
+        url = route.reverse id: 5, slug: 'boots', section: 'comments'
+        expect(url).to.be 'items/5-boots/comments'
+
+        route = new Route 'items/:id(-*slug/:desc)', 'null', 'null'
+        url = route.reverse id: 5, slug: 'shirt'
+        expect(url).to.be 'items/5'
+        url = route.reverse id: 5, slug: 'shirt', desc: 'brand new'
+        expect(url).to.be 'items/5-shirt/brand new'
+
       it 'should reject reversals when there are not enough params', ->
         route = new Route 'params/:one/:two', 'null', 'null'
         expect(route.reverse [1]).to.eql false
         expect(route.reverse one: 1).to.eql false
         expect(route.reverse two: 2).to.eql false
+        expect(route.reverse()).to.eql false
+
+      it 'should add trailing slash accordingly to current options', ->
+        route = new Route 'params', 'null', 'null', trailing: true
+        url = route.reverse()
+        expect(url).to.be 'params/'
 
     describe 'Router reversing', ->
       register = ->
@@ -327,7 +503,8 @@ define [
 
       it 'should allow for registering routes with a name', ->
         register()
-        names = _.pluck _.pluck(Backbone.history.handlers, 'route'), 'name'
+        names = for handler in Backbone.history.handlers
+          handler.route.name
         expect(names).to.eql ['home', 'phonebook', 'about', 'about', 'null#a']
 
       it 'should allow for reversing a route by its default name', ->
@@ -340,8 +517,7 @@ define [
         url = router.reverse 'phonebook', one: 145
         expect(url).to.be '/phone/145'
 
-        url = router.reverse 'missing', one: 145
-        expect(url).to.be false
+        expect(-> router.reverse 'missing', one: 145).to.throwError()
 
       it 'should allow for reversing a route by its controller', ->
         register()
@@ -362,12 +538,11 @@ define [
         register()
         params = one: 145
         spy = sinon.spy()
-        mediator.publish '!router:reverse', 'phonebook', params, spy
-        expect(spy).was.calledWith '/phone/145'
+        expect(mediator.execute 'router:reverse', 'phonebook', params).to.be '/phone/145'
 
-        spy = sinon.spy()
-        mediator.publish '!router:reverse', 'missing', params, spy
-        expect(spy).was.calledWith false
+        expect(->
+          mediator.execute 'router:reverse', 'missing', params
+        ).to.throwError()
 
       it 'should prepend mount point', ->
         router.dispose()
@@ -378,99 +553,59 @@ define [
         register()
 
         params = one: 145
-        spy = sinon.spy()
-        mediator.publish '!router:reverse', 'phonebook', params, spy
-        expect(spy).was.calledWith '/subdir/phone/145'
+        res = mediator.execute 'router:reverse', 'phonebook', params
+        expect(res).to.be '/subdir/phone/145'
 
     describe 'Query string extraction', ->
 
-      it 'should extract query string parameters', ->
+      it 'should extract query string parameters from an url', ->
         router.match 'query-string', 'null#null'
 
         input =
           foo: '123 456'
           'b a r': 'the _quick &brown föx= jumps over the lazy dáwg'
           'q&uu=x': 'the _quick &brown föx= jumps over the lazy dáwg'
-        query = serializequery input
+        query = utils.queryParams.stringify input
 
-        router.route 'query-string', {query}
-        expect(passedParams).to.eql input
+        router.route url: 'query-string?' + query
+        expect(passedOptions.query).to.eql input
 
-      it 'should extract query string params along with named', ->
-        router.match 'query-string/:one', 'null#null'
-
-        input =
-          foo: 'query123'
-          bar: 'query_456'
-          qux: '789 query'
-          one: 'whatever'
-        query = serializequery input
-
-        router.route '/query-string/named', {query}
-        # Named params overwrite query string params
-        expect(passedParams).to.eql create(input, one: 'named')
-
-      it 'should extract query string params along with splats', ->
-        router.match 'query-string/*one', 'null#null'
+      it 'should extract query string parameters from an object', ->
+        router.match 'query-string', 'controller#action'
 
         input =
-          foo: 'query123'
-          bar: 'query_456'
-          qux: '789 query'
-          one: 'whatever'
-        query = serializequery input
+          foo: '123 456'
+          'b a r': 'the _quick &brown föx= jumps over the lazy dáwg'
+          'q&uu=x': 'the _quick &brown föx= jumps over the lazy dáwg'
 
-        router.route '/query-string/foo/bar/qux', {query}
-        # Named params overwrite query string params
-        expect(passedParams).to.eql create(input, one: 'foo/bar/qux')
-
-      it 'should use the current query string as fallback', ->
-        input =
-          foo: 'query123'
-          bar: 'query_456'
-          qux: '789 query'
-        query = serializequery input
-
-        # We need to know this implementation detail to stub it correctly
-        stub = sinon.stub(Route.prototype, 'getCurrentQuery')
-          .returns(query)
-
-        router.match 'query-string', 'null#null'
-        router.route '/query-string'
-
-        expect(stub).was.called()
-        expect(passedParams).to.eql input
-
-        stub.restore()
+        router.route 'controller#action', null, {query: input}
+        expect(passedOptions.query).to.eql input
 
     describe 'Passing the Routing Options', ->
 
       it 'should pass routing options', ->
-        router.match ':id', 'null#null'
-        path = '/foo'
-        query = 'x=32&y=21'
+        router.match ':id', 'controller#action'
+        query = x: 32, y: 21
         options = foo: 123, bar: 456
-        router.route path, create {query}, options
+        router.route 'controller#action', ['foo'], create {query}, options
         # It should be a different object
         expect(passedOptions).not.to.be options
-        expect(passedRoute.query).to.be query
+        expect(passedRoute.path).to.be 'foo'
+        expect(passedRoute.query).to.be 'x=32&y=21'
         expect(passedOptions).to.eql(
-          create(options, changeURL: true)
+          create(options, changeURL: true, query: query)
         )
 
-    describe 'Listening to the the !router:route event', ->
+    describe 'Setting the router:route handler', ->
 
-      it 'should listen to the !router:route event', ->
+      it 'should route when receiving a path', ->
         path = 'router-route-event'
         options = replace: true
-        callback = sinon.spy()
 
         routeSpy = sinon.spy router, 'route'
         router.match path, 'router#route'
 
-        mediator.publish '!router:route', path, options, callback
-        expect(routeSpy).was.calledWith path, options
-        expect(callback).was.calledWith true
+        mediator.execute 'router:route', url: path, options
         expect(passedRoute).to.be.an 'object'
         expect(passedRoute.controller).to.be 'router'
         expect(passedRoute.action).to.be 'route'
@@ -479,44 +614,48 @@ define [
           create(options, {changeURL: true})
         )
 
-        callback = sinon.spy()
-        mediator.publish '!router:route', 'different-path', options, callback
-        expect(callback).was.calledWith false
+        expect(->
+          mediator.execute 'router:route', 'different-path', options
+        ).to.throwError()
 
         routeSpy.restore()
 
-      it 'should support the old !router:route signature without options', ->
-        path = 'router-route-event-old'
-        callback = sinon.spy()
-        router.match path, 'router#route'
-
-        mediator.publish '!router:route', path, callback
-        expect(callback).was.calledWith true
-        expect(passedRoute).to.be.an 'object'
-        expect(passedRoute.controller).to.be 'router'
-        expect(passedRoute.action).to.be 'route'
-        expect(passedRoute.path).to.be path
-        expect(passedParams).to.be.an 'object'
-        expect(passedOptions).to.eql {changeURL: true}
-
-    describe 'Routing by Name', ->
-
-      it 'should listen to the !router:routeByName event', ->
+      it 'should route when receiving a name', ->
 
         router.match '', 'home#index', name: 'home'
-        mediator.publish '!router:routeByName', 'home'
+        mediator.execute 'router:route', name: 'home'
 
         expect(passedRoute.controller).to.be 'home'
         expect(passedRoute.action).to.be 'index'
         expect(passedRoute.path).to.be ''
         expect(passedParams).to.be.an 'object'
 
-      it 'should route by name and params', ->
-        router.match '', 'home#index', name: 'home'
+      it 'should route when receiving both name and params', ->
         router.match 'phone/:id', 'phonebook#dial', name: 'phonebook'
 
         params = id: '123'
-        mediator.publish '!router:routeByName', 'phonebook', params
+        mediator.execute 'router:route', 'phonebook', params
+        expect(passedRoute.controller).to.be 'phonebook'
+        expect(passedRoute.action).to.be 'dial'
+        expect(passedRoute.path).to.be "phone/#{params.id}"
+        expect(passedParams).not.to.be params
+        expect(passedParams).to.be.an 'object'
+        expect(passedParams.id).to.be params.id
+
+      it 'should route when receiving controller and action name', ->
+        router.match '', 'home#index'
+        mediator.execute 'router:route', controller: 'home', action: 'index'
+
+        expect(passedRoute.controller).to.be 'home'
+        expect(passedRoute.action).to.be 'index'
+        expect(passedRoute.path).to.be ''
+        expect(passedParams).to.be.an 'object'
+
+      it 'should route when receiving controller and action name and params', ->
+        router.match 'phone/:id', 'phonebook#dial'
+
+        params = id: '123'
+        mediator.execute 'router:route', controller: 'phonebook', action: 'dial', params
         expect(passedRoute.controller).to.be 'phonebook'
         expect(passedRoute.action).to.be 'dial'
         expect(passedRoute.path).to.be "phone/#{params.id}"
@@ -528,21 +667,13 @@ define [
         router.match 'index', 'null#null', name: 'home'
         router.match 'phone/:id', 'phonebook#dial', name: 'phonebook'
 
-        routeSpy = sinon.spy router, 'route'
-        callbackSpy = sinon.spy()
-
         params = id: '123'
         options = replace: true
-        mediator.publish '!router:routeByName', 'phonebook',
-          params, options, callbackSpy
-
-        expectedPath = "/phone/#{params.id}"
-        expect(routeSpy).was.calledWith expectedPath, options
-        expect(callbackSpy).was.calledWith true
+        mediator.execute 'router:route', 'phonebook', params, options
 
         expect(passedRoute.controller).to.be 'phonebook'
         expect(passedRoute.action).to.be 'dial'
-        expect(passedRoute.path).to.be expectedPath[1..]
+        expect(passedRoute.path).to.be "phone/#{params.id}"
         expect(passedParams).not.to.be params
         expect(passedParams).to.be.an 'object'
         expect(passedParams.id).to.be params.id
@@ -553,39 +684,48 @@ define [
           )
         )
 
-      it 'should pass false to the callback when no named route was found', ->
-        callbackSpy = sinon.spy()
-        params = {}
-        options = {}
-        mediator.publish '!router:routeByName', 'phonebook',
-          params, options, callbackSpy
-        expect(callbackSpy).was.calledWith false
+      it 'should throw an error when no match was found', ->
+        expect(->
+          mediator.execute 'router:route', 'phonebook'
+        ).to.throwError()
 
     describe 'Changing the URL', ->
-
-      it 'should listen to the !router:changeURL event', ->
-        path = 'router-changeurl-event'
-        changeURL = sinon.spy router, 'changeURL'
-
-        mediator.publish '!router:changeURL', path
-        expect(changeURL).was.calledWith path
-
-        changeURL.restore()
-
       it 'should forward changeURL routing options to Backbone', ->
         path = 'router-changeurl-options'
         changeURL = sinon.spy router, 'changeURL'
-        navigate = sinon.stub Backbone.history, 'navigate'
+        navigate = sinon.spy Backbone.history, 'navigate'
+        options = some: 'stuff', changeURL: true
 
-        options = some: 'stuff'
-        mediator.publish '!router:changeURL', path, options
+        router.changeURL null, null, {path}, options
         expect(navigate).was.calledWith path,
           replace: false, trigger: false
 
-        options = replace: true, trigger: true, some: 'stuff'
-        mediator.publish '!router:changeURL', path, options
-        expect(Backbone.history.navigate).was.calledWith path,
-          replace: true, trigger: true
+        forwarding = replace: true, trigger: true
+        router.changeURL null, null, {path}, create(options, forwarding)
+        expect(navigate).was.calledWith path, forwarding
+
+        changeURL.restore()
+        navigate.restore()
+
+      it 'should not adjust the URL if not desired', ->
+        path = 'router-changeurl-false'
+        changeURL = sinon.spy router, 'changeURL'
+        navigate = sinon.spy Backbone.history, 'navigate'
+
+        router.changeURL null, null, {path}, changeURL: false
+        expect(navigate).was.notCalled()
+
+        changeURL.restore()
+        navigate.restore()
+
+      it 'should add the query string when adjusting the URL', ->
+        path = 'my-little-path'
+        query = 'foo=bar'
+        changeURL = sinon.spy router, 'changeURL'
+        navigate = sinon.spy Backbone.history, 'navigate'
+
+        router.changeURL null, null, {path, query}, changeURL: true
+        expect(navigate).was.calledWith "#{path}?#{query}"
 
         changeURL.restore()
         navigate.restore()

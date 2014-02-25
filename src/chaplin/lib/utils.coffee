@@ -21,6 +21,14 @@ utils =
         ctor.prototype = obj
         new ctor
 
+  indexOf: do ->
+    if Array::indexOf
+      (list, index) -> list.indexOf index
+    else if _.indexOf
+      _.indexOf
+
+  isArray: Array.isArray or _.isArray
+
   # Simple duck-typing serializer for models and collections.
   serialize: (data) ->
     if typeof data.serialize is 'function'
@@ -50,8 +58,9 @@ utils =
   # Get the whole chain of object prototypes.
   getPrototypeChain: (object) ->
     chain = [object.constructor.prototype]
-    chain.push object while object = object.constructor?.__super__
-    chain
+    while object = object.constructor?.__super__ ? object.constructor?.superclass
+      chain.push object
+    chain.reverse()
 
   # Get all property versions from object’s prototype chain.
   # E.g. if object1 & object2 have `prop` and object2 inherits from
@@ -62,7 +71,7 @@ utils =
       value = proto[property]
       if value and value not in result
         result.push value
-    result.reverse()
+    result
 
   # String Helpers
   # --------------
@@ -70,11 +79,6 @@ utils =
   # Upcase the first character.
   upcase: (str) ->
     str.charAt(0).toUpperCase() + str.substring(1)
-
-  # underScoreHelper -> under_score_helper.
-  underscorize: (string) ->
-    string.replace /[A-Z]/g, (char, index) ->
-      (if index isnt 0 then '_' else '') + char.toLowerCase()
 
   # Escapes a string to use in a regex.
   escapeRegExp: (str) ->
@@ -87,6 +91,62 @@ utils =
   # Returns whether a modifier key is pressed during a keypress or mouse click.
   modifierKeyPressed: (event) ->
     event.shiftKey or event.altKey or event.ctrlKey or event.metaKey
+
+  # Routing Helpers
+  # ---------------
+
+  # Returns the url for a named route and any params.
+  reverse: (criteria, params, query) ->
+    require('chaplin/mediator').execute 'router:reverse', criteria, params, query
+
+  # Redirects to URL, route name or controller and action pair.
+  redirectTo: (pathDesc, params, options) ->
+    require('chaplin/mediator').execute 'router:route', pathDesc, params, options
+
+  # Query parameters Helpers
+  # --------------
+
+  queryParams:
+
+    # Returns a query string from a hash
+    stringify: (queryParams) ->
+      query = ''
+      stringifyKeyValuePair = (encodedKey, value) ->
+        if value? then '&' + encodedKey + '=' + encodeURIComponent value else ''
+      for own key, value of queryParams
+        encodedKey = encodeURIComponent key
+        if utils.isArray value
+          for arrParam in value
+            query += stringifyKeyValuePair encodedKey, arrParam
+        else
+          query += stringifyKeyValuePair encodedKey, value
+      query and query.substring 1
+
+    # Returns a hash with query parameters from a query string
+    parse: (queryString) ->
+      params = {}
+      return params unless queryString
+      pairs = queryString.split '&'
+      for pair in pairs
+        continue unless pair.length
+        [field, value] = pair.split '='
+        continue unless field.length
+        field = decodeURIComponent field
+        value = decodeURIComponent value
+        current = params[field]
+        if current
+          # Handle multiple params with same name:
+          # Aggregate them in an array.
+          if current.push
+            # Add the existing array.
+            current.push value
+          else
+            # Create a new array.
+            params[field] = [current, value]
+        else
+          params[field] = value
+
+      params
 
 # Finish
 # ------

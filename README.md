@@ -1,12 +1,15 @@
 ![Chaplin](http://s3.amazonaws.com/imgly_production/3401027/original.png)
 
+[![Stories in Ready](https://badge.waffle.io/chaplinjs/chaplin.png?label=ready)](http://waffle.io/chaplinjs/chaplin)
+[![Build Status](https://travis-ci.org/chaplinjs/chaplin.png?branch=topics/backbone-options)](https://travis-ci.org/chaplinjs/chaplin)
+
 # An Application Architecture Using Backbone.js
 
 ## Introduction
 
 Chaplin is an architecture for JavaScript applications using the [Backbone.js](http://documentcloud.github.com/backbone/) library.
 
-All information, commercial support contacts and examples are available at [chaplinjs.org](http://chaplinjs.org). [Comprehensive documentation and class reference](docs/) is available on GitHub.
+All information, commercial support contacts and examples are available at [chaplinjs.org](http://chaplinjs.org), comprehensive documentation and class reference can be found at [docs.chaplinjs.org](http://docs.chaplinjs.org).
 
 [Download the latest release on chaplinjs.org](http://chaplinjs.org/#downloads). See below on how to compile from source manually.
 
@@ -33,16 +36,10 @@ Our build script compiles the CoffeeScripts and bundles them into one file. To r
    npm install
    ```
 
-This creates two directories:
-
-* `./build/amd/` with a build using the AMD module style
-* `./build/commonjs/` with a build using the CommonJS module style
-
-Each subdirectory contains the following files:
+This creates these files in `build` dir:
 
 * `chaplin.js` – The library as a compiled JavaScript file.
 * `chaplin.min.js` – Minified. For production use you should pick this.
-* `chaplin.min.js.gz` – Minified and GZip-compressed.
 
 ## Running the Tests
 
@@ -61,6 +58,11 @@ How to run the tests:
 
 Note that you can now additionally open `test/index.html` to run the tests in your browser (instead of in node).
 Furthermore code coverage reports are generated and may be viewed by opening `test/coverage/index.html` in your browser.
+
+To run tests with different params **with exoskeleton**:
+
+* **without jQuery / underscore:** append `?type=exos` to browser URL
+* **with jQuery / underscore:**: append `?type=deps` to browser URL
 
 ![Ending](http://s3.amazonaws.com/imgly_production/3362023/original.jpg)
 

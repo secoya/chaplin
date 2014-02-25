@@ -10,14 +10,10 @@ utils = require 'chaplin/lib/utils'
 # in order to add some functionality.
 module.exports = class Collection extends Backbone.Collection
   # Mixin an EventBroker.
-  _(@prototype).extend EventBroker
+  _.extend @prototype, EventBroker
 
   # Use the Chaplin model per default, not Backbone.Model.
   model: Model
-
-  # Mixin a Deferred.
-  initDeferred: ->
-    _(this).extend $.Deferred()
 
   # Serializes collection.
   serialize: ->
@@ -46,10 +42,6 @@ module.exports = class Collection extends Backbone.Collection
 
     # Remove all event handlers on this module.
     @off()
-
-    # If the model is a Deferred, reject it
-    # This does nothing if it was resolved before.
-    @reject?()
 
     # Remove model constructor reference, internal model lists
     # and event handlers.

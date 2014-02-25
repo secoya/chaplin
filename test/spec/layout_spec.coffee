@@ -11,36 +11,55 @@ define [
   describe 'Layout', ->
     # Initialize shared variables
     layout = testController = router = null
+    template = -> -> '<div id="test1"></div><div id="test2"></div>'
+    template5 = -> -> '<div id="test1"></div><div id="test5"></div>'
+
+    preventDefault = (event) -> event.preventDefault()
+    document.body.addEventListener 'click', preventDefault unless $
+
+    omit = (object, excluded) ->
+      result = {}
+      for key, value of object when key isnt excluded
+        result[key] = value
+      result
 
     createLink = (attributes) ->
-      attributes = if attributes then _.clone(attributes) else {}
+      attributes = if attributes then _.extend {}, attributes else {}
       # Yes, this is ugly. We’re doing it because IE8-10 reports an incorrect
       # protocol if the href attribute is set programatically.
       if attributes.href?
         div = document.createElement 'div'
         div.innerHTML = "<a href='#{attributes.href}'>Hello World</a>"
         link = div.firstChild
-        attributes = _.omit attributes, 'href'
-        $link = $(link)
+        attributes = omit attributes, 'href'
       else
-        $link = $(document.createElement 'a')
-      $link.attr attributes
+        link = document.createElement 'a'
+      for key, value of attributes
+        link.setAttribute key, value
+      link
+
+    appendClickRemove = (element) ->
+      document.body.appendChild element
+      if $
+        $(element).click()
+      else
+        window.clickOnElement element
+      document.body.removeChild element
 
     expectWasRouted = (linkAttributes) ->
-      stub = sinon.stub().yields true
-      mediator.subscribe '!router:route', stub
-      createLink(linkAttributes).appendTo(document.body).click().remove()
+      stub = sinon.spy()
+      mediator.setHandler 'router:route', stub
+      appendClickRemove createLink linkAttributes
       expect(stub).was.calledOnce()
-      [passedPath, passedOptions, passedCallback] = stub.firstCall.args
-      expect(passedPath).to.be linkAttributes.href
-      expect(passedCallback).to.be.a 'function'
+      [passedPath] = stub.firstCall.args
+      expect(passedPath).to.eql url: linkAttributes.href
       mediator.unsubscribe '!router:route', stub
       stub
 
     expectWasNotRouted = (linkAttributes) ->
       spy = sinon.spy()
-      mediator.subscribe '!router:route', spy
-      createLink(linkAttributes).appendTo(document.body).click().remove()
+      mediator.setHandler 'router:route', spy
+      appendClickRemove createLink linkAttributes
       expect(spy).was.notCalled()
       mediator.unsubscribe '!router:route', spy
       spy
@@ -55,30 +74,24 @@ define [
       testController.title = 'Test Controller Title'
 
     afterEach ->
-      layout.dispose()
       testController.dispose()
+      layout.dispose()
+
+    after ->
+      document.body.removeEventListener 'click', preventDefault unless $
 
     it 'should have el, $el and $ props / methods', ->
-      expect(layout.el).to.be document
-      expect(layout.$el).to.be.a $
-      expect(layout.$('body')[0]).to.be document.body
-
-    it 'should hide the view of an inactive controller', ->
-      testController.view.$el.css 'display', 'block'
-      mediator.publish 'beforeControllerDispose', testController
-      expect(testController.view.$el.css('display')).to.be 'none'
-
-    it 'should show the view of the active controller', ->
-      testController.view.$el.css 'display', 'none'
-      mediator.publish 'dispatcher:dispatch', testController
-      $el = testController.view.$el
-      expect($el.css('display')).to.be 'block'
+      expect(layout.el).to.be document.body
+      expect(layout.$el).to.be.a $ if $
 
     it 'should set the document title', (done) ->
-      mediator.publish '!adjustTitle', testController.title
+      spy = sinon.spy()
+      mediator.subscribe 'adjustTitle', spy
+      mediator.execute 'adjustTitle', testController.title
       setTimeout ->
         title = "#{testController.title} \u2013 #{layout.title}"
         expect(document.title).to.be title
+        expect(spy).was.calledWith testController.title, title
         done()
       , 60
 
@@ -90,17 +103,15 @@ define [
 
     it 'should correctly pass the query string', ->
       path = '/internal/link'
-      queryString = 'foo=bar&baz=qux'
+      query = 'foo=bar&baz=qux'
 
-      stub = sinon.stub().yields true
-      mediator.subscribe '!router:route', stub
-      linkAttributes = href: "#{path}?#{queryString}"
-      createLink(linkAttributes).appendTo(document.body).click().remove()
+      stub = sinon.spy()
+      mediator.setHandler 'router:route', stub
+      linkAttributes = href: "#{path}?#{query}"
+      appendClickRemove createLink linkAttributes
       expect(stub).was.calledOnce()
-      [passedPath, passedOptions, passedCallback] = stub.firstCall.args
-      expect(passedPath).to.be path
-      expect(passedOptions).to.eql {queryString}
-      expect(passedCallback).to.be.a 'function'
+      [passedPath] = stub.firstCall.args
+      expect(passedPath).to.eql url: linkAttributes.href
       mediator.unsubscribe '!router:route', stub
 
     it 'should not route links without href attributes', ->
@@ -135,17 +146,16 @@ define [
       window.open = old
 
     it 'should route clicks on elements with the “go-to” class', ->
-      stub = sinon.stub().yields true
-      mediator.subscribe '!router:route', stub
+      stub = sinon.stub()
+      mediator.setHandler 'router:route', stub
       path = '/internal/link'
-      $span = $(document.createElement 'span')
-        .addClass('go-to').attr('data-href', path)
-        .appendTo(document.body).click().remove()
+      span = document.createElement 'span'
+      span.className = 'go-to'
+      span.setAttribute 'data-href', path
+      appendClickRemove span
       expect(stub).was.calledOnce()
-      [passedPath, passedOptions, passedCallback] = stub.firstCall.args
-      expect(passedPath).to.be path
-      expect(passedOptions).to.be.an 'object'
-      expect(passedCallback).to.be.a 'function'
+      passedPath = stub.firstCall.args[0]
+      expect(passedPath).to.eql url: path
       mediator.unsubscribe '!router:route', stub
 
     # With custom external checks
@@ -223,73 +233,28 @@ define [
       expect(args[1]).to.be.an 'object'
       expect(args[1].nodeName).to.be 'A'
 
-    # Events hash
-    # -----------
-
-    it 'should register event handlers on the document declaratively', ->
-      spy1 = sinon.spy()
-      spy2 = sinon.spy()
-      layout.dispose()
-      class TestLayout extends Layout
-        events:
-          'click #testbed': 'testClickHandler'
-          click: spy2
-        testClickHandler: spy1
-      layout = new TestLayout
-      el = $('#testbed')
-      el.click()
-      expect(spy1).was.called()
-      expect(spy2).was.called()
-      layout.dispose()
-      el.click()
-      expect(spy1.callCount).to.be 1
-      expect(spy2.callCount).to.be 1
-
-    it 'should register event handlers on the document programatically', ->
-      expect(layout.delegateEvents)
-        .to.be Backbone.View::delegateEvents
-      expect(layout.undelegateEvents)
-        .to.be Backbone.View::undelegateEvents
-      expect(layout.delegateEvents).to.be.a 'function'
-      expect(layout.undelegateEvents).to.be.a 'function'
-
-      spy1 = sinon.spy()
-      spy2 = sinon.spy()
-      layout.testClickHandler = spy1
-      layout.delegateEvents
-        'click #testbed': 'testClickHandler'
-        click: spy2
-      el = $('#testbed')
-      el.click()
-      expect(spy1).was.called()
-      expect(spy2).was.called()
-      layout.undelegateEvents()
-      el.click()
-      expect(spy1.callCount).to.be 1
-      expect(spy2.callCount).to.be 1
-
     # Regions
     # -------
 
     it 'should allow for views to register regions', ->
       view1 = class Test1View extends View
         regions:
-          '': 'view-region1'
-          '#test1': 'test1'
-          '#test2': 'test2'
+          'view-region1': ''
+          'test1': '#test1'
+          'test2': '#test2'
 
       view2 = class Test2View extends View
         regions:
-          '': 'view-region2'
-          '#test1': 'test3'
-          '#test2': 'test4'
+          'view-region2': ''
+          'test3': '#test1'
+          'test4': '#test2'
 
-      spy = sinon.spy(layout, 'registerRegion')
+      spy = sinon.spy(layout, 'registerGlobalRegion')
       instance1 = new Test1View()
       expect(spy).was.calledWith instance1, 'view-region1', ''
       expect(spy).was.calledWith instance1, 'test1', '#test1'
       expect(spy).was.calledWith instance1, 'test2', '#test2'
-      expect(layout._registeredRegions).to.eql [
+      expect(layout.globalRegions).to.eql [
         {instance: instance1, name: 'test2', selector: '#test2'}
         {instance: instance1, name: 'test1', selector: '#test1'}
         {instance: instance1, name: 'view-region1', selector: ''}
@@ -299,7 +264,7 @@ define [
       expect(spy).was.calledWith instance2, 'view-region2', ''
       expect(spy).was.calledWith instance2, 'test3', '#test1'
       expect(spy).was.calledWith instance2, 'test4', '#test2'
-      expect(layout._registeredRegions).to.eql [
+      expect(layout.globalRegions).to.eql [
         {instance: instance2, name: 'test4', selector: '#test2'}
         {instance: instance2, name: 'test3', selector: '#test1'}
         {instance: instance2, name: 'view-region2', selector: ''}
@@ -314,13 +279,13 @@ define [
     it 'should allow for itself to register regions', ->
       Regional = Layout.extend
         regions:
-          '': 'view-region1'
-          '#test1': 'test1'
-          '#test2': 'test2'
+          'view-region1': ''
+          'test1': '#test1'
+          'test2': '#test2'
 
       regional = new Regional
 
-      expect(regional._registeredRegions).to.eql [
+      expect(regional.globalRegions).to.eql [
         {instance: regional, name: 'test2', selector: '#test2'}
         {instance: regional, name: 'test1', selector: '#test1'}
         {instance: regional, name: 'view-region1', selector: ''}
@@ -331,31 +296,31 @@ define [
     it 'should dispose of regions when a view is disposed', ->
       view = class TestView extends View
         regions:
-          '': 'test0'
-          '#test1': 'test1'
-          '#test2': 'test2'
+          'test0': ''
+          'test1': '#test1'
+          'test2': '#test2'
 
       instance = new TestView()
       instance.dispose()
-      expect(layout._registeredRegions).to.eql []
+      expect(layout.globalRegions).to.eql []
 
     it 'should only dispose of regions a view registered when
         it is disposed', ->
       view1 = class Test1View extends View
         regions:
-          '#test1': 'test1'
-          '#test2': 'test2'
+          'test1': '#test1'
+          'test2': '#test2'
 
       view2 = class Test2View extends View
         regions:
-          '#test1': 'test3'
-          '#test2': 'test4'
-          '': 'test5'
+          'test3': '#test1'
+          'test4': '#test2'
+          'test5': ''
 
       instance1 = new Test1View()
       instance2 = new Test2View()
       instance2.dispose()
-      expect(layout._registeredRegions).to.eql [
+      expect(layout.globalRegions).to.eql [
         {instance: instance1, name: 'test2', selector: '#test2'}
         {instance: instance1, name: 'test1', selector: '#test1'}
       ]
@@ -363,10 +328,12 @@ define [
 
     it 'should allow for views to be applied to regions', ->
       view1 = class Test1View extends View
+        autoRender: true
+        getTemplateFunction: template
         regions:
-          '': 'test0'
-          '#test1': 'test1'
-          '#test2': 'test2'
+          test0: ''
+          test1: '#test1'
+          test2: '#test2'
 
       view2 = class Test2View extends View
         autoRender: true
@@ -375,22 +342,31 @@ define [
       instance1 = new Test1View()
       instance2 = new Test2View {region: 'test2'}
       instance3 = new Test2View {region: 'test0'}
-      expect(instance2.container.selector).to.be '#test2'
-      expect(instance3.container).to.be instance1.$el
+
+      if $
+        expect(instance2.container.attr('id')).to.be 'test2'
+        expect(instance3.container).to.be instance1.$el
+      else
+        expect(instance2.container.id).to.be 'test2'
+        expect(instance3.container).to.be instance1.el
 
       instance1.dispose()
       instance2.dispose()
 
     it 'should apply regions in the order they were registered', ->
       view1 = class Test1View extends View
+        autoRender: true
+        getTemplateFunction: template
         regions:
-          '#test1': 'test1'
-          '#test2': 'test2'
+          'test1': '#test1'
+          'test2': '#test2'
 
       view2 = class Test2View extends View
+        autoRender: true
+        getTemplateFunction: template5
         regions:
-          '#test1': 'test1'
-          '#test5': 'test2'
+          'test1': '#test1'
+          'test2': '#test5'
 
       view3 = class Test3View extends View
         autoRender: true
@@ -399,7 +375,10 @@ define [
       instance1 = new Test1View()
       instance2 = new Test2View()
       instance3 = new Test3View {region: 'test2'}
-      expect(instance3.container.selector).to.be '#test5'
+      if $
+        expect(instance3.container.attr('id')).to.be 'test5'
+      else
+        expect(instance3.container.id).to.be 'test5'
 
       instance1.dispose()
       instance2.dispose()
@@ -407,14 +386,18 @@ define [
 
     it 'should only apply regions from non-stale views', ->
       view1 = class Test1View extends View
+        autoRender: true
+        getTemplateFunction: template
         regions:
-          '#test1': 'test1'
-          '#test2': 'test2'
+          'test1': '#test1'
+          'test2': '#test2'
 
       view2 = class Test2View extends View
+        autoRender: true
+        getTemplateFunction: template
         regions:
-          '#test1': 'test1'
-          '#test5': 'test2'
+          'test1': '#test1'
+          'test2': '#test5'
 
       view3 = class Test3View extends View
         autoRender: true
@@ -424,7 +407,10 @@ define [
       instance2 = new Test2View()
       instance2.stale = true
       instance3 = new Test3View {region: 'test2'}
-      expect(instance3.container.selector).to.be '#test2'
+      if $
+        expect(instance3.container.attr('id')).to.be 'test2'
+      else
+        expect(instance3.container.id).to.be 'test2'
 
       instance1.dispose()
       instance2.dispose()
@@ -445,7 +431,7 @@ define [
         expect(Object.isFrozen(layout)).to.be true
 
       mediator.publish 'foo'
-      $('#testbed').click()
+      window.clickOnElement document.querySelector('#testbed')
 
       # It should unsubscribe from events
       expect(spy1).was.notCalled()

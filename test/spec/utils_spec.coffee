@@ -2,7 +2,8 @@ define [
   'backbone'
   'underscore'
   'chaplin/lib/utils'
-], (Backbone, _, utils) ->
+  'chaplin/mediator'
+], (Backbone, _, utils, mediator) ->
   'use strict'
 
   describe 'utils', ->
@@ -45,10 +46,10 @@ define [
       it 'should get prototype chain of instance', ->
         object = new D
         expect(utils.getPrototypeChain object).to.eql [
-          D.prototype,
-          C.prototype,
+          A.prototype,
           B.prototype,
-          A.prototype
+          C.prototype,
+          D.prototype
         ]
 
     describe 'getAllPropertyVersions', ->
@@ -62,7 +63,56 @@ define [
         expect(utils.upcase 'стафф').to.be 'Стафф'
         expect(utils.upcase '123456').to.be '123456'
 
-    describe 'underscorize', ->
-      it 'should convert camelCase to underscore_case', ->
-        expect(utils.underscorize 'userNameAndAge').to.be 'user_name_and_age'
-        expect(utils.underscorize 'User').to.be 'user'
+    describe 'reverse', ->
+      beforeEach ->
+        mediator.unsubscribe()
+      afterEach ->
+        mediator.unsubscribe()
+
+      it 'should return the url for a named route', ->
+        stubbedRouteHandler = (routeName, params) ->
+          expect(routeName).to.be 'foo'
+          expect(params).to.eql {id: 3, d: "data"}
+          '/foo/bar'
+        mediator.setHandler 'router:reverse', stubbedRouteHandler
+
+        url = utils.reverse 'foo', id: 3, d: "data"
+        expect(url).to.be '/foo/bar'
+
+      it 'should return the url for a named route with empty path', ->
+        stubbedRouteHandler = (routeName, params) ->
+          expect(routeName).to.be 'home'
+          expect(params).to.be undefined
+          '/'
+        mediator.setHandler 'router:reverse', stubbedRouteHandler
+
+        url = utils.reverse 'home'
+        expect(url).to.be '/'
+
+      it 'should throw exception if no route found', ->
+        stubbedRouteHandler = (routeName, params) ->
+          false
+        mediator.setHandler 'router:reverse', stubbedRouteHandler
+
+        try
+          url = utils.reverse 'foo', id: 3, d: "data"
+        catch err
+          expect(err).to.be.an Error
+
+      # it 'should return null if router does not respond', ->
+      #   url = utils.reverse 'foo', id: 3, d: "data"
+      #   expect(url).to.be null
+
+    describe 'queryParams', ->
+      queryParams = p1: 'With space', p2_empty: '', 'p 3': [999, 'a&b']
+      queryString = 'p1=With%20space&p2_empty=&p%203=999&p%203=a%26b'
+
+      it 'should serialize query parameters from object into string', ->
+        expect(utils.queryParams.stringify queryParams).to.be queryString
+
+      it 'should ignore undefined and null values when serializing query parameters', ->
+        queryParams1 = p1: null, p2: undefined, p3: 'third'
+        expect(utils.queryParams.stringify queryParams1).to.be 'p3=third'
+
+      it 'should deserialize query parameters from query string into object', ->
+        expect(utils.queryParams.parse queryString).to.eql queryParams

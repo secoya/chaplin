@@ -2,122 +2,99 @@
 
 _ = require 'underscore'
 Backbone = require 'backbone'
+mediator = require 'chaplin/mediator'
 utils = require 'chaplin/lib/utils'
 EventBroker = require 'chaplin/lib/event_broker'
+View = require 'chaplin/views/view'
 
 # Shortcut to access the DOM manipulation library.
 $ = Backbone.$
 
-module.exports = class Layout # This class does not extend View.
+module.exports = class Layout extends View
+  # Bind to document body by default.
+  el: 'body'
 
-  # Borrow the static extend method from Backbone.
-  @extend = Backbone.Model.extend
-
-  # Mixin an EventBroker.
-  _(@prototype).extend EventBroker
+  # Override default view behavior, we don’t want document.body to be removed.
+  keepElement: true
 
   # The site title used in the document title.
   # This should be set in your app-specific Application class
   # and passed as an option.
   title: ''
 
-  # An hash to register events, like in Backbone.View
-  # It is only meant for events that are app-wide
-  # independent from any view.
-  events: {}
-
-  # Register @el, @$el and @cid for delegating events.
-  el: document
-  $el: $(document)
-  cid: 'chaplin-layout'
-
   # Regions
   # -------
 
-  # Region registration; see view documentation for more details.
-  regions: null
-
   # Collection of registered regions; all view regions are collected here.
-  _registeredRegions: null
+  globalRegions: null
 
-  constructor: ->
-    @initialize arguments...
+  listen:
+    'beforeControllerDispose mediator': 'scroll'
 
-    # Set app wide event handlers.
-    @delegateEvents()
-
-    # Register all exposed regions.
-    @registerRegions this, @regions
-
-  initialize: (options = {}) ->
+  constructor: (options = {}) ->
+    @globalRegions = []
     @title = options.title
     @regions = options.regions if options.regions
-    @settings = _(options).defaults
-      titleTemplate: _.template("<%= subtitle %> \u2013 <%= title %>")
+    @settings = _.defaults options,
+      titleTemplate: (data) ->
+        st = if data.subtitle then "#{data.subtitle} \u2013 " else ''
+        st + data.title
       openExternalToBlank: false
       routeLinks: 'a, .go-to'
       skipRouting: '.noscript'
       # Per default, jump to the top of the page.
       scrollTo: [0, 0]
 
-    @_registeredRegions = []
+    mediator.setHandler 'region:show', @showRegion, this
+    mediator.setHandler 'region:register', @registerRegionHandler, this
+    mediator.setHandler 'region:unregister', @unregisterRegionHandler, this
+    mediator.setHandler 'region:find', @regionByName, this
+    mediator.setHandler 'adjustTitle', @adjustTitle, this
 
-    @subscribeEvent 'beforeControllerDispose', @hideOldView
-    @subscribeEvent 'dispatcher:dispatch', @showNewView
-    @subscribeEvent '!adjustTitle', @adjustTitle
-
-    @subscribeEvent '!region:show', @showRegion
-    @subscribeEvent '!region:register', @registerRegionHandler
-    @subscribeEvent '!region:unregister', @unregisterRegionHandler
+    super
 
     # Set the app link routing.
     @startLinkRouting() if @settings.routeLinks
-
-  # Take (un)delegateEvents from Backbone
-  # -------------------------------------
-  delegateEvents: Backbone.View::delegateEvents
-  undelegateEvents: Backbone.View::undelegateEvents
-  $: Backbone.View::$
 
   # Controller startup and disposal
   # -------------------------------
 
   # Handler for the global beforeControllerDispose event.
-  hideOldView: (controller) ->
+  scroll: ->
     # Reset the scroll position.
-    scrollTo = @settings.scrollTo
-    if scrollTo
-      window.scrollTo scrollTo[0], scrollTo[1]
-
-    # Hide the current view.
-    view = controller.view
-    view.$el.hide() if view
-
-  # Handler for the global dispatcher:dispatch event.
-  # Show the new view.
-  showNewView: (controller) ->
-    view = controller.view
-    view.$el.show() if view
+    position = @settings.scrollTo
+    if position
+      window.scrollTo position[0], position[1]
 
   # Handler for the global dispatcher:dispatch event.
   # Change the document title to match the new controller.
   # Get the title from the title property of the current controller.
   adjustTitle: (subtitle = '') ->
     title = @settings.titleTemplate {@title, subtitle}
-
     # Internet Explorer < 9 workaround.
-    setTimeout (-> document.title = title), 50
+    setTimeout =>
+      document.title = title
+      @publishEvent 'adjustTitle', subtitle, title
+    , 50
+    title
 
   # Automatic routing of internal links
   # -----------------------------------
 
   startLinkRouting: ->
-    if @settings.routeLinks
-      $(document).on 'click', @settings.routeLinks, @openLink
+    route = @settings.routeLinks
+    return unless route
+    if $
+      @$el.on 'click', route, @openLink
+    else
+      @delegate 'click', route, @openLink
 
   stopLinkRouting: ->
-    if @settings.routeLinks
-      $(document).off 'click', @settings.routeLinks
+    route = @settings.routeLinks
+    if $
+      @$el.off 'click', route if route
+    else
+      @undelegate 'click', route, @openLink
 
   isExternalLink: (link) ->
     link.target is '_blank' or
@@ -129,15 +106,14 @@ module.exports = class Layout # This class does not extend View.
   openLink: (event) =>
     return if utils.modifierKeyPressed(event)
 
-    el = event.currentTarget
-    $el = $(el)
+    el = if $ then event.currentTarget else event.delegateTarget
     isAnchor = el.nodeName is 'A'
 
     # Get the href and perform checks on it.
-    href = $el.attr('href') or $el.data('href') or null
+    href = el.getAttribute('href') or el.getAttribute('data-href') or null
 
     # Basic href checks.
-    return if href is null or href is undefined or
+    return if not href? or
       # Technically an empty string is a valid relative URL
       # but it doesn’t make sense to route it.
       href is '' or
@@ -148,7 +124,7 @@ module.exports = class Layout # This class does not extend View.
     skipRouting = @settings.skipRouting
     type = typeof skipRouting
     return if type is 'function' and not skipRouting(href, el) or
-      type is 'string' and $el.is skipRouting
+      type is 'string' and (if $ then $(el).is(skipRouting) else Backbone.utils.matchesSelector el, skipRouting)
 
     # Handle external links.
     external = isAnchor and @isExternalLink el
@@ -156,30 +132,14 @@ module.exports = class Layout # This class does not extend View.
       if @settings.openExternalToBlank
         # Open external links normally in a new tab.
         event.preventDefault()
-        window.open el.href
-      return
-
-    if isAnchor
-      path = el.pathname
-      queryString = el.search.substring 1
-      # Append leading slash for IE8.
-      path = "/#{path}" if path.charAt(0) isnt '/'
-    else
-      [path, queryString] = href.split '?'
-      queryString ?= ''
-
-    # Create routing options and callback.
-    options = {queryString}
-    callback = (routed) ->
-      # Prevent default handling if the URL could be routed.
-      if routed
-        event.preventDefault()
-      else unless isAnchor
-        location.href = path
+        window.open href
       return
 
     # Pass to the router, try to route the path internally.
-    @publishEvent '!router:route', path, options, callback
+    utils.redirectTo url: href
+
+    # Prevent default handling if the URL could be routed.
+    event.preventDefault()
     return
 
   # Region management
@@ -189,29 +149,29 @@ module.exports = class Layout # This class does not extend View.
   # Register a single view region or all regions exposed.
   registerRegionHandler: (instance, name, selector) ->
     if name?
-      @registerRegion instance, name, selector
+      @registerGlobalRegion instance, name, selector
     else
-      @registerRegions instance
+      @registerGlobalRegions instance
 
   # Registering one region bound to a view.
-  registerRegion: (instance, name, selector) ->
+  registerGlobalRegion: (instance, name, selector) ->
     # Remove the region if there was already one registered perhaps by
     # a base class.
-    @unregisterRegion instance, name
+    @unregisterGlobalRegion instance, name
 
     # Place this region registration into the regions array.
-    @_registeredRegions.unshift {instance, name, selector}
+    @globalRegions.unshift {instance, name, selector}
 
   # Triggered by view; passed in the regions hash.
   # Simply register all regions exposed by it.
-  registerRegions: (instance) ->
+  registerGlobalRegions: (instance) ->
     # Regions can be be extended by subclasses, so we need to check the
     # whole prototype chain for matching regions. Regions registered by the
     # more-derived class overwrites the region registered by the less-derived
     # class.
     for version in utils.getAllPropertyVersions instance, 'regions'
-      for selector, name of version
-        @registerRegion instance, name, selector
+      for name, selector of version
+        @registerGlobalRegion instance, name, selector
     # Return nothing.
     return
 
@@ -219,54 +179,64 @@ module.exports = class Layout # This class does not extend View.
   # Unregisters single named region or all view regions.
   unregisterRegionHandler: (instance, name) ->
     if name?
-      @unregisterRegion instance, name
+      @unregisterGlobalRegion instance, name
     else
-      @unregisterRegions instance
+      @unregisterGlobalRegions instance
 
   # Unregisters a specific named region from a view.
-  unregisterRegion: (instance, name) ->
+  unregisterGlobalRegion: (instance, name) ->
     cid = instance.cid
-    @_registeredRegions = _.filter @_registeredRegions, (region) ->
+    @globalRegions = (region for region in @globalRegions when (
       region.instance.cid isnt cid or region.name isnt name
+    ))
 
   # When views are disposed; remove all their registered regions.
-  unregisterRegions: (instance) ->
-    @_registeredRegions = _.filter @_registeredRegions, (region) ->
+  unregisterGlobalRegions: (instance) ->
+    @globalRegions = (region for region in @globalRegions when (
       region.instance.cid isnt instance.cid
+    ))
+
+  # Returns the region by its name, if found.
+  regionByName: (name) ->
+    for reg in @globalRegions when reg.name is name and not reg.instance.stale
+      return reg
 
   # When views are instantiated and request for a region assignment;
   # attempt to fulfill it.
   showRegion: (name, instance) ->
     # Find an appropriate region.
-    region = _.find @_registeredRegions, (region) ->
-      region.name is name and not region.instance.stale
+    region = @regionByName name
 
     # Assert that we got a valid region.
     throw new Error "No region registered under #{name}" unless region
 
     # Apply the region selector.
     instance.container = if region.selector is ''
-      region.instance.$el
+      if $
+        region.instance.$el
+      else
+        region.instance.el
     else
-      region.instance.$ region.selector
+      if region.instance.noWrap
+        if $
+          $(region.instance.container).find region.selector
+        else
+          region.instance.container.querySelector region.selector
+      else
+        region.instance[if $ then '$' else 'find'] region.selector
 
   # Disposal
   # --------
 
-  disposed: false
-
   dispose: ->
     return if @disposed
 
-    delete @regions
-
+    # Stop routing links.
     @stopLinkRouting()
-    @unsubscribeAllEvents()
-    @undelegateEvents()
 
-    delete @title
+    # Remove all regions and document title setting.
+    delete this[prop] for prop in ['globalRegions', 'title', 'route']
 
-    @disposed = true
+    mediator.removeHandlers this
 
-    # You’re frozen when your heart’s not open.
-    Object.freeze? this
+    super

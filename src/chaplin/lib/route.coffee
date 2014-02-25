@@ -4,6 +4,7 @@ _ = require 'underscore'
 Backbone = require 'backbone'
 EventBroker = require 'chaplin/lib/event_broker'
 Controller = require 'chaplin/controllers/controller'
+utils = require 'chaplin/lib/utils'
 
 module.exports = class Route
 
@@ -15,21 +16,32 @@ module.exports = class Route
   @extend = Backbone.Model.extend
 
   # Mixin an EventBroker.
-  _(@prototype).extend EventBroker
+  _.extend @prototype, EventBroker
 
   # Taken from Backbone.Router.
-  escapeRegExp = /[-[\]{}()+?.,\\^$|#\s]/g
+  escapeRegExp = /[\-{}\[\]+?.,\\\^$|#\s]/g
+  optionalRegExp = /\((.*?)\)/g
+  paramRegExp = /(?::|\*)(\w+)/g
+
+  # Add or remove trailing slash from path according to trailing option.
+  processTrailingSlash = (path, trailing) ->
+    switch trailing
+      when yes
+        path += '/' unless path[-1..] is '/'
+      when no
+        path = path[...-1] if path[-1..] is '/'
+    path
 
   # Create a route for a URL pattern and a controller action
   # e.g. new Route '/users/:id', 'users', 'show', { some: 'options' }
   constructor: (@pattern, @controller, @action, options) ->
     # Disallow regexp routes.
-    if _.isRegExp @pattern
+    if typeof @pattern isnt 'string'
       throw new Error 'Route: RegExps are not supported.
         Use strings with :names and `constraints` option of route'
 
     # Clone options.
-    @options = if options then _.clone(options) else {}
+    @options = if options then _.extend({}, options) else {}
 
     # Store the name on the route if given
     @name = @options.name if @options.name?
@@ -42,10 +54,12 @@ module.exports = class Route
     @name ?= @controller + '#' + @action
 
     # Initialize list of :params which the route will use.
-    @paramNames = []
+    @allParams = []
+    @requiredParams = []
+    @optionalParams = []
 
     # Check if the action is a reserved name
-    if _(Controller.prototype).has @action
+    if @action of Controller.prototype
       throw new Error 'Route: You should not use existing controller ' +
         'properties as action names'
 
@@ -54,58 +68,140 @@ module.exports = class Route
     # You’re frozen when your heart’s not open.
     Object.freeze? this
 
-  # Create a check predicate to determine if a route should be reversed.
+  # Tests if route params are equal to criteria.
   matches: (criteria) ->
     if typeof criteria is 'string'
       criteria is @name
     else
+      propertiesCount = 0
       for name in ['name', 'action', 'controller']
+        propertiesCount++
         property = criteria[name]
         return false if property and property isnt this[name]
-      true
+      invalidParamsCount = propertiesCount is 1 and name in ['action', 'controller']
+      not invalidParamsCount
 
-  reverse: (params) ->
+  # Generates route URL from params.
+  reverse: (params, query) ->
+    params = @normalizeParams params
+    return false if params is false
+
     url = @pattern
-    if _.isArray params
-      # Ensure we have enough parameters.
-      return false if params.length < @paramNames.length
 
-      index = 0
-      url = url.replace /[:*][^\/\?]+/g, (match) ->
-        result = params[index]
-        index += 1
-        result
-    else
-      # From a params hash; we need to be able to return
-      # the actual URL this route represents
-      # Iterate and attempt to replace params in pattern
-      for name in @paramNames
-        value = params[name]
-        return false if value is undefined
+    # From a params hash; we need to be able to return
+    # the actual URL this route represents.
+    # Iterate and replace params in pattern.
+    for name in @requiredParams
+      value = params[name]
+      url = url.replace ///[:*]#{name}///g, value
+
+    # Replace optional params.
+    for name in @optionalParams
+      if value = params[name]
         url = url.replace ///[:*]#{name}///g, value
 
-    # If the url tests out good; return the url; else, false.
-    if @test url then url else false
+    # Kill unfulfilled optional portions.
+    raw = url.replace optionalRegExp, (match, portion) ->
+      if portion.match /[:*]/g
+        ""
+      else
+        portion
 
+    # Add or remove trailing slash according to the Route options.
+    url = processTrailingSlash raw, @options.trailing
+
+    return url unless query
+
+    # Stringify query params if needed.
+    if typeof query is 'object'
+      queryString = utils.queryParams.stringify query
+      url += if queryString then '?' + queryString else ''
+    else
+      url += (if query[0] is '?' then '' else '?') + query
+
+  # Validates incoming params and returns them in a unified form - hash
+  normalizeParams: (params) ->
+    if utils.isArray params
+      # Ensure we have enough parameters.
+      return false if params.length < @requiredParams.length
+
+      # Convert params from array into object.
+      paramsHash = {}
+      for paramName, paramIndex in @requiredParams
+        paramsHash[paramName] = params[paramIndex]
+
+      return false unless @testConstraints paramsHash
+
+      params = paramsHash
+    else
+      # null or undefined params are equivalent to an empty hash
+      params ?= {}
+
+      return false unless @testParams params
+
+    params
+
+  # Test if passed params hash matches current constraints.
+  testConstraints: (params) ->
+    # Apply the parameter constraints.
+    constraints = @options.constraints
+    if constraints
+      for own name, constraint of constraints
+        return false unless constraint.test params[name]
+
+    true
+
+  # Test if passed params hash matches current route.
+  testParams: (params) ->
+    # Ensure that params contains all the parameters needed.
+    for paramName in @requiredParams
+      return false if params[paramName] is undefined
+
+    @testConstraints params
+
+  # Creates the actual regular expression that Backbone.History#loadUrl
+  # uses to determine if the current url is a match.
   createRegExp: ->
     pattern = @pattern
-      # Escape magic characters.
-      .replace(escapeRegExp, '\\$&')
-      # Replace named parameters, collecting their names.
-      .replace(/(?::|\*)(\w+)/g, @addParamName)
 
-    # Create the actual regular expression, match until the end of the URL or
-    # the begin of query string.
+    # Escape magic characters.
+    pattern = pattern.replace(escapeRegExp, '\\$&')
 
-    # HACK!!!!!!!!!
-    # Made some a change to support trailing slash.
-    @regExp = ///^#{pattern}(?=(/?[?])|(/?$))///
+    # Keep accurate back-reference indices in allParams.
+    # Eg. Matching the regex returns arrays like [a, undefined, c]
+    #  and each item needs to be matched to the correct
+    #  named parameter via its position in the array.
+    @replaceParams pattern, (match, param) =>
+      @allParams.push param
 
-  addParamName: (match, paramName) =>
-    # Save parameter name.
-    @paramNames.push paramName
-    # Replace with a character class.
-    if match.charAt(0) is ':'
+    # Process optional route portions.
+    pattern = pattern.replace optionalRegExp, @parseOptionalPortion
+
+    # Process remaining required params.
+    pattern = @replaceParams pattern, (match, param) =>
+      @requiredParams.push param
+      @paramCapturePattern match
+
+    # Create the actual regular expression, match until the end of the URL,
+    # trailing slash or the begin of query string.
+    @regExp = ///^#{pattern}(?=\/?(?=\?|$))///
+
+  parseOptionalPortion: (match, optionalPortion) =>
+    # Extract and replace params.
+    portion = @replaceParams optionalPortion, (match, param) =>
+      @optionalParams.push param
+      # Replace the match (eg. :foo) with capturing groups.
+      @paramCapturePattern match
+
+    # Replace the optional portion with a non-capturing and optional group.
+    "(?:#{portion})?"
+
+  replaceParams: (s, callback) =>
+    # Parse :foo and *bar, replacing via callback.
+    s.replace paramRegExp, callback
+
+  paramCapturePattern: (param) ->
+    if param.charAt(0) is ':'
       # Regexp for :foo.
       '([^\/\?]+)'
     else
@@ -121,47 +217,37 @@ module.exports = class Route
     # Apply the parameter constraints.
     constraints = @options.constraints
     if constraints
-      params = @extractParams path
-      for own name, constraint of constraints
-        return false unless constraint.test(params[name])
+      return @testConstraints @extractParams path
 
-    return true
+    true
 
   # The handler called by Backbone.History when the route matches.
   # It is also called by Router#route which might pass options.
-  handler: (path, options) =>
-    options = if options then _.clone(options) else {}
+  handler: (pathParams, options) =>
+    options = if options then _.extend {}, options else {}
 
-    # If no query string was passed, use the current.
-    query = options.query ? @getCurrentQuery()
+    # pathDesc may be either an object with params for reversing or a simple URL.
+    if typeof pathParams is 'object'
+      query = utils.queryParams.stringify options.query
+      params = pathParams
+      path = @reverse params
+    else
+      [path, query] = pathParams.split '?'
+      if not query?
+        query = ''
+      else
+        options.query = utils.queryParams.parse query
+      params = @extractParams path
+      path = processTrailingSlash path, @options.trailing
 
-    # Build params hash.
-    params = @buildParams path, query
+    actionParams = _.extend {}, params, @options.params
 
     # Construct a route object to forward to the match event.
     route = {path, @action, @controller, @name, query}
 
-    # Remove the query string from routing options.
-    delete options.query
-
     # Publish a global event passing the route and the params.
     # Original options hash forwarded to allow further forwarding to backbone.
-    @publishEvent 'router:match', route, params, options
-
-  # Returns the query string for the current document.
-  getCurrentQuery: ->
-    location.search.substring 1
-
-  # Create a proper Rails-like params hash, not an array like Backbone.
-  buildParams: (path, queryString) ->
-    _.extend {},
-      # Add params from query string.
-      @extractQueryParams(queryString),
-      # Add named params from pattern matches.
-      @extractParams(path),
-      # Add additional params from options as they might
-      # overwrite params extracted from URL.
-      @options.params
+    @publishEvent 'router:match', route, actionParams, options
 
   # Extract named parameters from the URL path.
   extractParams: (path) ->
@@ -170,35 +256,9 @@ module.exports = class Route
     # Apply the regular expression.
     matches = @regExp.exec path
 
-    # Fill the hash using the paramNames and the matches.
+    # Fill the hash using param names and the matches.
     for match, index in matches.slice(1)
-      paramName = if @paramNames.length then @paramNames[index] else index
+      paramName = if @allParams.length then @allParams[index] else index
       params[paramName] = match
-
-    params
-
-  # Extract parameters from the query string.
-  extractQueryParams: (queryString) ->
-    params = {}
-    return params unless queryString
-    pairs = queryString.split '&'
-    for pair in pairs
-      continue unless pair.length
-      [field, value] = pair.split '='
-      continue unless field.length
-      field = decodeURIComponent field
-      value = decodeURIComponent value
-      current = params[field]
-      if current
-        # Handle multiple params with same name:
-        # Aggregate them in an array.
-        if current.push
-          # Add the existing array.
-          current.push value
-        else
-          # Create a new array.
-          params[field] = [current, value]
-      else
-        params[field] = value
 
     params

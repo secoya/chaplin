@@ -2,7 +2,9 @@
 
 _ = require 'underscore'
 Backbone = require 'backbone'
+mediator = require 'chaplin/mediator'
 EventBroker = require 'chaplin/lib/event_broker'
+History = require 'chaplin/lib/history'
 Route = require 'chaplin/lib/route'
 utils = require 'chaplin/lib/utils'
 
@@ -14,26 +16,41 @@ module.exports = class Router # This class does not extend Backbone.Router.
   @extend = Backbone.Model.extend
 
   # Mixin an EventBroker.
-  _(@prototype).extend EventBroker
+  _.extend @prototype, EventBroker
 
   constructor: (@options = {}) ->
-    _(@options).defaults
-      pushState: true
+    # Enable pushState by default for HTTP(s).
+    # Disable it for file:// schema.
+    isWebFile = window.location.protocol isnt 'file:'
+    _.defaults @options,
+      pushState: isWebFile
       root: '/'
+      trailing: no
 
     # Cached regex for stripping a leading subdir and hash/slash.
     @removeRoot = new RegExp('^' + utils.escapeRegExp(@options.root) + '(#)?')
 
-    @subscribeEvent '!router:route', @routeHandler
-    @subscribeEvent '!router:routeByName', @routeByNameHandler
-    @subscribeEvent '!router:reverse', @reverseHandler
-    @subscribeEvent '!router:changeURL', @changeURLHandler
+    @subscribeEvent '!router:route', @oldEventError
+    @subscribeEvent '!router:routeByName', @oldEventError
+    @subscribeEvent '!router:changeURL', @oldURLEventError
+
+    @subscribeEvent 'dispatcher:dispatch', @changeURL
+
+    mediator.setHandler 'router:route', @route, this
+    mediator.setHandler 'router:reverse', @reverse, this
 
     @createHistory()
 
+  oldEventError: ->
+    throw new Error '!router:route and !router:routeByName events were removed.
+  Use `Chaplin.utils.redirectTo`'
+
+  oldURLEventError: ->
+    throw new Error '!router:changeURL event was removed.'
+
   # Create a Backbone.History instance.
   createHistory: ->
-    Backbone.history or= new Backbone.History()
+    Backbone.history = new History()
 
   startHistory: ->
     # Start the Backbone.History instance to start routing.
@@ -43,6 +60,11 @@ module.exports = class Router # This class does not extend Backbone.Router.
   # Stop the current Backbone.History instance from observing URL changes.
   stopHistory: ->
     Backbone.history.stop() if Backbone.History.started
+
+  # Search through backbone history handlers.
+  findHandler: (predicate) ->
+    for handler in Backbone.history.handlers when predicate handler
+      return handler
 
   # Connect an address with a controller action.
   # Creates a route on the Backbone.History instance.
@@ -63,6 +85,10 @@ module.exports = class Router # This class does not extend Backbone.Router.
       # Separate target into controller and controller action.
       [controller, action] = target.split('#')
 
+    # Let each match call provide its own trailing option to appropriate Route.
+    # Pass trailing value from the Router by default.
+    _.defaults options, trailing: @options.trailing
+
     # Create the route.
     route = new Route pattern, controller, action, options
     # Register the route at the Backbone.History instance.
@@ -77,63 +103,65 @@ module.exports = class Router # This class does not extend Backbone.Router.
   # This looks quite like Backbone.History::loadUrl but it
   # accepts an absolute URL with a leading slash (e.g. /foo)
   # and passes the routing options to the callback function.
-  route: (path, options) =>
-    options = if options then _.clone(options) else {}
+  route: (pathDesc, params, options) ->
+    # Try to extract an URL from the pathDesc if it's a hash.
+    if typeof pathDesc is 'object'
+      path = pathDesc.url
+      params = pathDesc.params if not params and pathDesc.params
 
-    # Update the URL programmatically after routing.
-    _(options).defaults changeURL: true
-
-    # Remove leading subdir and hash or slash.
-    path = path.replace @removeRoot, ''
-
-    # Find a matching route.
-    for handler in Backbone.history.handlers
-      if handler.route.test(path)
-        handler.callback path, options
-        return true
-    false
-
-  # Handler for the global !router:route event.
-  routeHandler: (path, options, callback) ->
-    # Support old signature: Assume only path and callback were passed
-    # if we only got two arguments.
-    if arguments.length is 2 and typeof options is 'function'
-      callback = options
-      options = {}
-
-    routed = @route path, options
-    callback? routed
-
-  # Find the URL for a given route name and parameters,
-  # then route the URL. Returns whether a route matched.
-  # Handler for the global !router:routeByName event.
-  routeByNameHandler: (name, params, options, callback) ->
-    # Support old signature: Assume options wasn't passed
-    # if we only got three arguments.
-    if arguments.length is 3 and typeof options is 'function'
-      callback = options
-      options = {}
-
-    path = @reverse name, params
-    if typeof path is 'string'
-      routed = @route path, options
-      callback? routed
+    params = if params
+      if utils.isArray(params) then params.slice() else _.extend {}, params
     else
-      callback? false
+      {}
+
+    # Accept path to be given via URL wrapped in object,
+    # or implicitly via route name, or explicitly via object.
+    if path?
+      # Remove leading subdir and hash or slash.
+      path = path.replace @removeRoot, ''
+
+      # Find a matching route.
+      handler = @findHandler (handler) -> handler.route.test path
+
+      # Options is the second argument in this case.
+      options = params
+      params = null
+    else
+      options = if options then _.extend {}, options else {}
+
+      # Find a route using a passed via pathDesc string route name.
+      handler = @findHandler (handler) ->
+        if handler.route.matches pathDesc
+          params = handler.route.normalizeParams(params)
+          return true if params
+        false
+
+    if handler
+      # Update the URL programmatically after routing.
+      _.defaults options, changeURL: true
+
+      handler.callback path or params, options
+      true
+    else
+      throw new Error 'Router#route: request was not routed'
 
   # Find the URL for given criteria using the registered routes and
   # provided parameters. The criteria may be just the name of a route
   # or an object containing the name, controller, and/or action.
   # Warning: this is usually **hot** code in terms of performance.
   # Returns the URL string or false.
-  reverse: (criteria, params) ->
+  reverse: (criteria, params, query) ->
     root = @options.root
+
+    if params? and typeof params isnt 'object'
+      throw new TypeError 'Router#reverse: params must be an array or an ' +
+        'object'
 
     # First filter the route handlers to those that are of the same name.
     handlers = Backbone.history.handlers
     for handler in handlers when handler.route.matches criteria
       # Attempt to reverse using the provided parameter hash.
-      reversed = handler.route.reverse params
+      reversed = handler.route.reverse params, query
 
       # Return the url if we got a valid one; else we continue on.
       if reversed isnt false
@@ -141,14 +169,14 @@ module.exports = class Router # This class does not extend Backbone.Router.
         return url
 
     # We didn't get anything.
-    false
-
-  # Handler for the global !router:reverse event.
-  reverseHandler: (name, params, callback) ->
-    callback @reverse name, params
+    throw new Error 'Router#reverse: invalid route specified'
 
   # Change the current URL, add a history entry.
-  changeURL: (url, options = {}) ->
+  changeURL: (controller, params, route, options) ->
+    return unless route.path? and options.changeURL
+
+    url = route.path + if route.query then "?#{route.query}" else ""
+
     navigateOptions =
       # Do not trigger or replace per default.
       trigger: options.trigger is true
@@ -156,11 +184,6 @@ module.exports = class Router # This class does not extend Backbone.Router.
 
     # Navigate to the passed URL and forward options to Backbone.
     Backbone.history.navigate url, navigateOptions
-
-  # Handler for the global !router:changeURL event.
-  # Accepts both the url and an options hash that is forwarded to Backbone.
-  changeURLHandler: (url, options) ->
-    @changeURL url, options
 
   # Disposal
   # --------
@@ -175,6 +198,8 @@ module.exports = class Router # This class does not extend Backbone.Router.
     delete Backbone.history
 
     @unsubscribeAllEvents()
+
+    mediator.removeHandlers this
 
     # Finished.
     @disposed = true

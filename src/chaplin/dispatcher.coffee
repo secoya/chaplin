@@ -2,6 +2,7 @@
 
 _ = require 'underscore'
 Backbone = require 'backbone'
+mediator = require 'chaplin/mediator'
 utils = require 'chaplin/lib/utils'
 EventBroker = require 'chaplin/lib/event_broker'
 
@@ -10,7 +11,7 @@ module.exports = class Dispatcher
   @extend = Backbone.Model.extend
 
   # Mixin an EventBroker.
-  _(@prototype).extend EventBroker
+  _.extend @prototype, EventBroker
 
   # The previous route information.
   # This object contains the controller name, action, path, and name (if any).
@@ -21,13 +22,14 @@ module.exports = class Dispatcher
   currentController: null
   currentRoute: null
   currentParams: null
+  currentQuery: null
 
   constructor: ->
     @initialize arguments...
 
   initialize: (options = {}) ->
     # Merge the options.
-    @settings = _(options).defaults
+    @settings = _.defaults options,
       controllerPath: 'controllers/'
       controllerSuffix: '_controller'
 
@@ -48,12 +50,11 @@ module.exports = class Dispatcher
   #
   dispatch: (route, params, options) ->
     # Clone params and options so the original objects remain untouched.
-    params = if params then _.clone(params) else {}
-    options = if options then _.clone(options) else {}
+    params = if params then _.extend {}, params else {}
+    options = if options then _.extend {}, options else {}
 
-    # Whether to update the URL after controller startup.
-    # Default to true unless explicitly set to false.
-    options.changeURL = true unless options.changeURL is false
+    # null or undefined query parameters are equivalent to an empty hash
+    options.query = {} if not options.query?
 
     # Whether to force the controller startup even
     # if current and new controllers and params match
@@ -65,7 +66,8 @@ module.exports = class Dispatcher
     return if not options.forceStartup and
       @currentRoute?.controller is route.controller and
       @currentRoute?.action is route.action and
-      _.isEqual @currentParams, params
+      _.isEqual(@currentParams, params) and
+      _.isEqual(@currentQuery, options.query)
 
     # Fetch the new controller, then go on.
     @loadController route.controller, (Controller) =>
@@ -75,31 +77,28 @@ module.exports = class Dispatcher
   # The default implementation uses require() from a AMD module loader
   # like RequireJS to fetch the constructor.
   loadController: (name, handler) ->
-    fileName = utils.underscorize(name) + @settings.controllerSuffix
+    fileName = name + @settings.controllerSuffix
     moduleName = @settings.controllerPath + fileName
     if define?.amd
       require [moduleName], handler
     else
-      handler require moduleName
+      setTimeout =>
+        handler require moduleName
+      , 0
 
   # Handler for the controller lazy-loading.
   controllerLoaded: (route, params, options, Controller) ->
-    # Store the current route as the previous route.
-    @previousRoute = @currentRoute
+    if @nextPreviousRoute = @currentRoute
+      previous = _.extend {}, @nextPreviousRoute
+      previous.params = @currentParams if @currentParams?
+      delete previous.previous if previous.previous
+      prev = {previous}
+    @nextCurrentRoute = _.extend {}, route, prev
 
-    # Setup the current route object.
-    @currentRoute = _.extend {}, route, previous: utils.beget @previousRoute
+    controller = new Controller params, @nextCurrentRoute, options
+    @executeBeforeAction controller, @nextCurrentRoute, params, options
 
-    # Initialize the new controller.
-    controller = new Controller params, @currentRoute, options
-
-    # Execute before actions if necessary.
-    methodName = if controller.beforeAction
-      'executeBeforeActions'
-    else
-      'executeAction'
-    this[methodName](controller, @currentRoute, params, options)
-
+  # Executes controller action.
   executeAction: (controller, route, params, options) ->
     # Dispose the previous controller.
     if @currentController
@@ -109,83 +108,50 @@ module.exports = class Dispatcher
       # Passing new parameters that the action method will receive.
       @currentController.dispose params, route, options
 
-    # Call the controller action with params and options.
-    controller[route.action] params, route, options
-
     # Save the new controller and its parameters.
     @currentController = controller
     @currentParams = params
+    @currentQuery = options.query
+
+    # Call the controller action with params and options.
+    controller[route.action] params, route, options
 
     # Stop if the action triggered a redirect.
     return if controller.redirected
-
-    # Adjust the URL.
-    @adjustURL route, params, options
 
     # We're done! Spread the word!
     @publishEvent 'dispatcher:dispatch', @currentController,
       params, route, options
 
-  # Before actions with chained execution.
-  executeBeforeActions: (controller, route, params, options) ->
-    beforeActions = []
+  # Executes before action filterer.
+  executeBeforeAction: (controller, route, params, options) ->
+    before = controller.beforeAction
 
-    # Before actions can be extended by subclasses, so we need to check the
-    # whole prototype chain for matching before actions. Before actions in
-    # parent classes are executed before actions in child classes.
-    for actions in utils.getAllPropertyVersions controller, 'beforeAction'
-
-      # Iterate over the before actions in search for a matching
-      # name with the arguments’ action name.
-      for name, action of actions
-
-        # Do not add this object more than once.
-        if name is route.action or RegExp("^#{name}$").test route.action
-
-          if typeof action is 'string'
-            action = controller[action]
-
-          unless typeof action is 'function'
-            throw new Error 'Controller#executeBeforeActions: ' +
-              "#{action} is not a valid action method for #{name}."
-
-          # Save the before action.
-          beforeActions.push action
-
-    # Save returned value and also immediately return in case the value is false.
-    next = (method, previous = null) =>
-      # Stop if the action triggered a redirect.
-      return if controller.redirected
-
-      # End of chain, finally start the action.
-      unless method
-        @executeAction controller, route, params, options
+    executeAction = =>
+      if controller.redirected or @currentRoute and route is @currentRoute
+        @nextPreviousRoute = @nextCurrentRoute = null
+        controller.dispose()
         return
+      @previousRoute = @nextPreviousRoute
+      @currentRoute = @nextCurrentRoute
+      @nextPreviousRoute = @nextCurrentRoute = null
+      @executeAction controller, route, params, options
 
-      # Execute the next before action.
-      previous = method.call controller, params, route, options, previous
+    unless before
+      executeAction()
+      return
 
-      # Detect a CommonJS promise in order to use pipelining below,
-      # otherwise execute next method directly.
-      if previous and typeof previous.then is 'function'
-        previous.then (data) =>
-          # Execute as long as the currentController is
-          # the callee for this promise.
-          if not @currentController or controller is @currentController
-            next beforeActions.shift(), data
-      else
-        next beforeActions.shift(), previous
+    # Throw deprecation warning.
+    if typeof before isnt 'function'
+      throw new TypeError 'Controller#beforeAction: function expected. ' +
+        'Old object-like form is not supported.'
 
-    # Start beforeAction execution chain.
-    next beforeActions.shift()
-
-  # Change the URL to the new controller using the router.
-  adjustURL: (route, params, options) ->
-    return unless route.path?
-
-    # Tell the router to actually change the current URL.
-    url = route.path + if route.query then "?#{route.query}" else ""
-    @publishEvent '!router:changeURL', url, options if options.changeURL
+    # Execute action in controller context.
+    promise = controller.beforeAction params, route, options
+    if promise and promise.then
+      promise.then executeAction
+    else
+      executeAction()
 
   # Disposal
   # --------

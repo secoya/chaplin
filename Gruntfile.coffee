@@ -25,13 +25,12 @@ module.exports = (grunt) ->
     'temp/chaplin/views/collection_view.js'
     'temp/chaplin/lib/route.js'
     'temp/chaplin/lib/router.js'
-    'temp/chaplin/lib/delayer.js'
+    'temp/chaplin/lib/history.js'
     'temp/chaplin/lib/event_broker.js'
     'temp/chaplin/lib/support.js'
     'temp/chaplin/lib/composition.js'
     'temp/chaplin/lib/sync_machine.js'
     'temp/chaplin/lib/utils.js'
-    'temp/chaplin/lib/helpers.js'
     'temp/chaplin.js'
   ]
 
@@ -86,11 +85,69 @@ module.exports = (grunt) ->
           forceOverwriteSources: true
           relativeType: 'bundle'
 
+    # Publishing via Git
+    # ------------------
+    transbrute:
+      docs:
+        remote: 'git@github.com:chaplinjs/chaplin.git'
+        branch: 'gh-pages'
+        files: [
+          { expand: true, cwd: 'docs/', src: '**/*' }
+        ]
+      downloads:
+        message: "Release #{pkg.version}."
+        tag: pkg.version
+        tagMessage: "Version #{pkg.version}."
+        remote: 'git@github.com:chaplinjs/downloads.git'
+        branch: 'gh-pages'
+        files: [
+          { expand: true, cwd: 'build/', src: 'chaplin.{js,min.js}' },
+          {
+            dest: 'bower.json',
+            body: {
+              name: 'chaplin',
+              repo: 'chaplinjs/downloads',
+              version: pkg.version,
+              main: 'chaplin.js',
+              scripts: ['chaplin.js'],
+              dependencies: { backbone: '1.x' }
+            }
+          },
+          {
+            dest: 'component.json',
+            body: {
+              name: 'chaplin',
+              repo: 'chaplinjs/downloads',
+              version: pkg.version,
+              main: 'chaplin.js',
+              scripts: ['chaplin.js'],
+              dependencies: { 'components/backbone': '1.0.0' }
+            }
+          },
+          {
+            dest: 'package.json',
+            body: {
+              name: 'chaplin',
+              version: pkg.version,
+              description: 'Chaplin.js',
+              main: 'chaplin.js',
+              scripts: { test: 'echo "Error: no test specified" && exit 1' },
+              repository: {
+                type: 'git', url: 'git://github.com/chaplinjs/downloads.git'
+              },
+              author: 'Chaplin team',
+              license: 'MIT',
+              bugs: { url: 'https://github.com/chaplinjs/downloads/issues' },
+              dependencies: { backbone: '~1.0.0', underscore: '~1.5.1' }
+            }
+          }
+        ]
+
     # Module naming
     # -------------
     # TODO: Remove this when uRequire hits 0.3
     copy:
-      commonjs:
+      universal:
         files: [
           expand: true
           dest: 'temp/'
@@ -101,10 +158,12 @@ module.exports = (grunt) ->
         options:
           processContent: (content, path) ->
             name = ///temp/(.*)\.js///.exec(path)[1]
+            # data = content
+            data = content.replace /require\('/g, "loader('"
             """
-            require.define({'#{name}': function(exports, require, module) {
-            #{content}
-            }});
+            loader.register('#{name}', function(e, r, module) {
+            #{data}
+            });
             """
 
       amd:
@@ -148,8 +207,15 @@ module.exports = (grunt) ->
     # --------------------
     # TODO: Remove this when uRequire hits 0.3
     concat:
+      universal:
+        files: [
+          dest: 'build/<%= pkg.name %>.js'
+          src: modules
+        ]
+
       options:
         separator: ';'
+
         banner: '''
         /*!
          * Chaplin <%= pkg.version %>
@@ -159,61 +225,62 @@ module.exports = (grunt) ->
          * http://chaplinjs.org
          */
 
+        (function(){
+
+        var loader = (function() {
+          var modules = {};
+          var cache = {};
+
+          var dummy = function() {return function() {};};
+          var initModule = function(name, definition) {
+            var module = {id: name, exports: {}};
+            definition(module.exports, dummy(), module);
+            var exports = cache[name] = module.exports;
+            return exports;
+          };
+
+          var loader = function(path) {
+            if (cache.hasOwnProperty(path)) return cache[path];
+            if (modules.hasOwnProperty(path)) return initModule(path, modules[path]);
+            throw new Error('Cannot find module "' + path + '"');
+          };
+
+          loader.register = function(bundle, fn) {
+            modules[bundle] = fn;
+          };
+          return loader;
+        })();
+
 
         '''
+        footer: '''
 
-      amd:
-        files: [
-          dest: 'build/amd/<%= pkg.name %>.js'
-          src: modules
-        ]
+        var regDeps = function(Backbone, _) {
+          loader.register('backbone', function(exports, require, module) {
+            module.exports = Backbone;
+          });
+          loader.register('underscore', function(exports, require, module) {
+            module.exports = _;
+          });
+        };
 
-      commonjs:
-        files: [
-          dest: 'build/commonjs/<%= pkg.name %>.js'
-          src: modules
-        ]
+        if (typeof define === 'function' && define.amd) {
+          define(['backbone', 'underscore'], function(Backbone, _) {
+            regDeps(Backbone, _);
+            return loader('chaplin');
+          });
+        } else if (typeof module === 'object' && module && module.exports) {
+          regDeps(require('backbone'), require('underscore'));
+          module.exports = loader('chaplin');
+        } else if (typeof require === 'function') {
+          regDeps(window.Backbone, window._ || window.Backbone.utils);
+          window.Chaplin = loader('chaplin');
+        } else {
+          throw new Error('Chaplin requires Common.js or AMD modules');
+        }
 
-      brunch:
-        files: [
-          dest: 'build/brunch/<%= pkg.name %>.js'
-          src: modules
-        ]
-
-        options:
-          banner: '''
-          /*!
-           * Chaplin <%= pkg.version %>
-           *
-           * Chaplin may be freely distributed under the MIT license.
-           * For all details and documentation:
-           * http://chaplinjs.org
-           */
-
-          // Dirty hack for require-ing backbone and underscore.
-          (function() {
-            var deps = {
-              backbone: window.Backbone, underscore: window._
-            };
-
-            for (var name in deps) {
-              (function(name) {
-                var definition = {};
-                definition[name] = function(exports, require, module) {
-                  module.exports = deps[name];
-                };
-
-                try {
-                  require(item);
-                } catch(e) {
-                  require.define(definition);
-                }
-              })(name);
-            }
-          })();
-
-
-          '''
+        })();
+        '''
 
     # Lint
     # ----
@@ -249,7 +316,7 @@ module.exports = (grunt) ->
     bower:
       install:
         options:
-          targetDir: './test/components'
+          targetDir: './test/bower_components'
           cleanup: true
 
     # Test runner
@@ -266,40 +333,18 @@ module.exports = (grunt) ->
     # ------
     uglify:
       options:
-        mangle: false
-
-      amd:
+        mangle: true
+      universal:
         files:
-          'build/amd/chaplin.min.js': 'build/amd/chaplin.js'
-
-      commonjs:
-        files:
-          'build/commonjs/chaplin.min.js': 'build/commonjs/chaplin.js'
-
-      brunch:
-        files:
-          'build/brunch/chaplin.min.js': 'build/brunch/chaplin.js'
+          'build/chaplin.min.js': 'build/chaplin.js'
 
     # Compression
     # -----------
     compress:
-      amd:
-        files: [
-          src: 'build/amd/chaplin.min.js'
-          dest: 'build/amd/chaplin.min.js.gz'
-        ]
-
-      commonjs:
-        files: [
-          src: 'build/commonjs/chaplin.min.js'
-          dest: 'build/commonjs/chaplin.min.js.gz'
-        ]
-
-      brunch:
-        files: [
-          src: 'build/brunch/chaplin.min.js'
-          dest: 'build/brunch/chaplin.min.js.gz'
-        ]
+      files: [
+        src: 'build/chaplin.min.js'
+        dest: 'build/chaplin.min.js.gz'
+      ]
 
     # Watching for changes
     # --------------------
@@ -345,45 +390,12 @@ module.exports = (grunt) ->
 
   # Build
   # -----
-  grunt.registerTask 'build:commonjs', [
-    'coffee:compile'
-    'copy:commonjs'
-    'concat:commonjs'
-  ]
-
-  grunt.registerTask 'build:amd', [
-    'coffee:compile'
-    'urequire'
-    'copy:amd'
-    'concat:amd'
-  ]
-
-  grunt.registerTask 'build:brunch', [
-    'coffee:compile'
-    'copy:commonjs'
-    'concat:brunch'
-  ]
-
-  grunt.registerTask 'build:minified', [
-    'uglify:commonjs'
-    'compress:commonjs'
-    'uglify:amd'
-    'compress:amd'
-    'uglify:brunch'
-    'compress:brunch'
-  ]
-
-  grunt.registerTask 'build:all', [
-    'build:amd'
-    'build:commonjs'
-    'build:brunch'
-    'build:minified'
-  ]
 
   grunt.registerTask 'build', [
-    'build:amd'
-    'build:commonjs'
-    'build:brunch'
+    'coffee:compile'
+    'copy:universal'
+    'concat:universal'
+    'uglify'
   ]
 
   # Lint
@@ -423,6 +435,111 @@ module.exports = (grunt) ->
     'test'
     'watch'
   ]
+
+  # Releasing
+  # ---------
+
+  grunt.registerTask 'check:versions:component', 'Check that package.json and bower.json versions match', ->
+    componentVersion = grunt.file.readJSON('bower.json').version
+    unless componentVersion is pkg.version
+      grunt.fail.warn "bower.json is version #{componentVersion}, package.json is #{pkg.version}."
+    else
+      grunt.log.ok()
+
+  grunt.registerTask 'check:versions:changelog', 'Check that CHANGELOG.md is up to date', ->
+    # Require CHANGELOG.md to contain "Chaplin VERSION (DIGIT"
+    changelogMd = grunt.file.read('CHANGELOG.md')
+    unless RegExp("Chaplin #{pkg.version} \\(\\d").test changelogMd
+      grunt.fail.warn "CHANGELOG.md does not seem to be updated for #{pkg.version}."
+    else
+      grunt.log.ok()
+
+  grunt.registerTask 'check:versions:docs', 'Check that package.json and docs versions match', ->
+    template = grunt.file.read path.join('docs', '_layouts', 'default.html')
+    match = template.match /^version: ((\d+)\.(\d+)\.(\d+)(?:-[\dA-Za-z\-]*)?)$/m
+    unless match
+      grunt.fail.warn "Version missing in docs layout."
+    docsVersion = match[1]
+    unless docsVersion is pkg.version
+      grunt.fail.warn "Docs layout is version #{docsVersion}, package.json is #{pkg.version}."
+    else
+      grunt.log.ok()
+
+  grunt.registerTask 'check:versions', [
+    'check:versions:component',
+    'check:versions:changelog',
+    'check:versions:docs'
+  ]
+
+  grunt.registerTask 'release:git', 'Check context, commit and tag for release.', ->
+    prompt = require 'prompt'
+    prompt.start()
+    prompt.message = prompt.delimiter = ''
+    prompt.colors = false
+    # Command/query wrapper, turns description object for `spawn` into runner
+    command = (desc, message) ->
+      (next) ->
+        grunt.log.writeln message if message
+        grunt.util.spawn desc, (err, result, code) -> next(err)
+    query = (desc) ->
+      (next) -> grunt.util.spawn desc, (err, result, code) -> next(err, result)
+    # Help checking input from prompt. Returns a callback that calls the
+    # original callback `next` only if the input was as expected
+    checkInput = (expectation, next) ->
+      (err, input) ->
+        unless input and input.question is expectation
+          grunt.fail.warn "Aborted: Expected #{expectation}, got #{input}"
+        next()
+
+    steps = []
+    continuation = this.async()
+
+    # Check for master branch
+    steps.push query(cmd: 'git', args: ['rev-parse', '--abbrev-ref', 'HEAD'])
+    steps.push (result, next) ->
+      result = result.toString().trim()
+      if result is 'master'
+        next()
+      else
+        prompt.get([
+            description: "Current branch is #{result}, not master. 'ok' to continue, Ctrl-C to quit."
+            pattern: /^ok$/, required: true
+          ],
+          checkInput('ok', next)
+        )
+    # List dirty files, ask for confirmation
+    steps.push query(cmd: 'git', args: ['status', '--porcelain'])
+    steps.push (result, next) ->
+      grunt.fail.warn "Nothing to commit." unless result.toString().length
+
+      grunt.log.writeln "The following dirty files will be committed:"
+      grunt.log.writeln result
+      prompt.get([
+          description: "Commit these files? 'ok' to continue, Ctrl-C to quit.",
+          pattern: /^ok$/, required: true
+        ],
+        checkInput('ok', next)
+      )
+
+    # Commit
+    steps.push command(cmd: 'git', args: ['commit', '-a', '-m', "Release #{pkg.version}"])
+
+    # Tag
+    steps.push command(cmd: 'git', args: ['tag', '-a', pkg.version, '-m', "Version #{pkg.version}"])
+
+    grunt.util.async.waterfall steps, continuation
+
+  grunt.registerTask 'release', [
+    'check:versions',
+    'release:git',
+    'build',
+    'transbrute:docs',
+    'transbrute:downloads'
+  ]
+
+  # Publish Documentation
+  # ---------------------
+  grunt.registerTask 'docs:publish', ['check:versions:docs', 'transbrute:docs']
 
   # Default
   # -------

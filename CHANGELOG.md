@@ -1,3 +1,156 @@
+See [upgrading guide](http://docs.chaplinjs.org/upgrading.html) if you're using old chaplin version and want to upgrade.
+
+# Chaplin 1.0.0 (23 January 2013)
+* `route.previous` is now `undefined` instead of an empty object if there is no previous object.
+
+# Chaplin 0.13.0 (18 January 2013)
+* Renamed `Controller#compose` to `Controller#reuse`
+* Added `trailing` option for `Router` which will:
+    * When `false` (default), strip accident route slashes: `/users/` => `/users`
+    * When `true`, append all route slashes: `/users` => `/users/`
+    * When `null`, do nothing (like before): `/users` != `/users/`
+* Normalize URI handling with trailing slashes
+* Added support for optional `Route` params, like this: `/users/(:user)`
+* `route.previous` param of controller actions is now saved only once.
+* Fixed bug when last char was removed from query string
+
+# Chaplin 0.12.0 (10 December 2013)
+* Added support for Exoskeleton 0.6. Previous versions are now incompatible.
+* Removed `Delayer`. Use [separate Delayer package](https://github.com/chaplinjs/delayer)
+  if you want to use it.
+* `Chaplin.helpers` were merged with `Chaplin.utils`.
+  Use `utils` now for `reverse` and `redirectTo`.
+* `CollectionView#filter` now ignores arguments if they are not functions. Useful if you want to call it on some DOM event from `events` hash.
+* `CollectionView#listSelector` can now also be a function.
+* `Dispatcher` now loads common.js code on next event loop tick (`setTimeout load, 0`)
+  instead of previous fully synchronous behaviour to match AMD.
+
+# Chaplin 0.11.3 (29 October 2013)
+* Fixed view regions.
+* Fixed filtering of collection view elements.
+* Backbone.History is now used as Chaplin.History if it's patched
+  (with query string support).
+
+# Chaplin 0.11.2 (24 October 2013)
+* Added support for [Exoskeleton](http://exosjs.com) — faster and leaner Backbone.
+* Thanks to that, you can now use Chaplin without underscore or jQuery
+  dependencies at all! Just Exoskeleton and Chaplin.
+  Make sure to set `window._` to `Backbone.utils` in no-deps environment.
+
+# Chaplin 0.11.1 (2 October 2013)
+* `Dispatcher#dispatch` now checks if `options.query` hash was changed.
+* `Route#reverse` now won't add a ? symbol at the end of a returned url if you pass an empty object as a `query` parameter (second one)
+* `utils.queryParams.stringify` will now ignore `undefined` and `null` values
+
+# Chaplin 0.11.0 (21 September 2013)
+* Chaplin internals now use *Request / Response* pattern instead of
+  bang `!events`. New system also allows to return values.
+  The syntax is so: `mediator.setHandler(name, function)`,
+  `mediator.execute(name, args...)`.
+  Removed events:
+    * `!router:route`, `!router:routeByName` (use `helpers.redirectTo`)
+    * `!router:changeURL`
+    * `!composer:compose`, `!composer:retrieve`
+    * `!region:register`, `!region:unregister`
+    * `!adjustTitle`
+      (use `mediator.execute('adjustTitle', name)` or `Controller#adjustTitle`).
+      An `adjustTitle` event would be triggered after title is set.
+* Improved `Chaplin.Controller`:
+    * `Controller#compose` method now:
+        * by default, returns the composition itself
+        * if composition body returned a promise, it returns a promise too
+    * Removed `Controller#redirectToRoute`. Use `Controller#redirectTo`.
+    * `redirectTo` now takes route name by default. If you want to pass URL, use it as `redirectTo({url: 'URL'})`.
+* Improved `Chaplin.View`:
+    * Added `noWrap` option that allows to disable Backbone top-level
+      element bound to view class.
+    * Added `optionNames` property that contains a list of options that will
+      be picked from an object passed to View, when initialising it.
+      Property allows to simply extend it in your child classes:
+      `optionNames: ParentView.prototype.optionNames.concat(['template'])`
+    * Views now appended to DOM only if they were not there.
+* Improved `Chaplin.Layout`:
+    * When push state is disabled, internal links are handled as if they had `#` (gh-664).
+* Improved `Chaplin.helpers`:
+    * Added `helpers.redirectTo` which allows to redirect to other route
+      or url.
+* Improved `Chaplin.utils`:
+    * Added `utils.queryParams.{stringify,parse}`.
+    * `utils.getPrototypeChain` now returns prototypes from
+      oldest to newest, to match `utils.getAllPropertyVersions`.
+* Improved `Chaplin.Router`:
+    * `Route#reverse` (as well as `Router#reverse`) are now able to add query parameters to the reversed URL, no matter if they are already stringified or not when passed into the reverse (as a third parameter).
+    * `Route#matches` improved not to return `true` when the only `controller` or `action` parameter passed.
+    * Fixed `getCurrentQuery` error when `pushState` is disabled (gh-671).
+    * Query params are now not copied to next routes (gh-677).
+* Improved `Chaplin.Application`:
+    * Renamed `startRouting` to `start`, the following method also does freezing of app object.
+* Temporarily added `Chaplin.History` that overrides `Backbone.History`.
+  It won't not ignore query string history as compared to Backbone (gh-577).
+
+Special thanks to [Andrew Yankovsky](https://github.com/YAndrew91).
+
+# Chaplin 0.10.0 (30 June 2013)
+Chaplin now provides universal build for Common.js and AMD.
+
+* Improved `Chaplin.Application`:
+    * Application is now initialized by default with `new Application`
+      constructor method instead of `Application#initialize`.
+    * Added default `Application#initialize` functionality.
+* Improved `Chaplin.Router`:
+    * Early error is now thrown for `!router:route`, `!router:routeByName`
+      and Chaplin.helpers.reverse methods when nothing is matched.
+    * Removed `callback` argument from `!router:route` and
+      `!router:routeByName`.
+* Improved `Chaplin.View`:
+    * **Breaking:** `regions` syntax has changed to more logical.
+      Before: `regions: {'.selector': 'region'}`.
+      Now: `regions: {'region': '.selector'}`.
+      We’ve made a small utility that automatically updates your code
+      to new syntax: [replace.js](https://gist.github.com/paulmillr/5891455).
+      Also, updated `registerRegion` method signature to similar.
+    * `regions` option can now be passed to constructor.
+    * `insertView` now returns inserted view.
+* Fix controller disposal after redirect.
+
+# Chaplin 0.9.0 (4 May 2013)
+* Added full lodash compatibility.
+* Removed deferred mix-in (`initDeferred`) support from
+  models, collections and views.
+* Improved `Chaplin.Controller` and `Chaplin.Dispatcher`:
+    * Made `Controller#beforeAction` a function.
+      The old object form is not supported anymore.
+      You need to use `super` like in any other method,
+      `beforeAction`s won’t be merged without it.
+      Asyncronous `beforeAction`s with promises are still supported.
+    * Controllers are now disposed automatically after redirection
+      or asynchronous before actions.
+* Improved `Chaplin.Router`:
+    * Fixed bug with preserving query string in URL.
+    * Removed underscorizing of loaded by default controller names.
+      `deleted_users#show` won’t longer be rewritten to `deletedUsers#show`.
+      The controller name in the route is directly used as module name.
+* Improved `Chaplin.View`:
+    * Added `keepElement` property (false by default).
+      When truthy, the view’s DOM element won’t be removed after disposal.
+    * `View#dispose` now calls Backbone’s `View#remove` method.
+    * Subviews are now always an array.
+* Improved `Chaplin.CollectionView`:
+    * Added Backbone 1.0 `Collection#set` support.
+* Improved `Chaplin.Layout`:
+    * Added inheritance from `Chaplin.View`.
+    * Renamed some methods for compat with `Chaplin.View`:
+        * `_registeredRegions` to `globalRegions`
+        * `registerRegion` to `registerGlobalRegion`
+        * `registerRegion` to `registerGlobalRegions`
+        * `unregisterRegion` to `unregisterGlobalRegion`
+        * `unregisterRegions` to `unregisterGlobalRegions`
+    * Changed default `Layout` element from `document` to `body`.
+    * Removed explicit `view.$el.show()` / `hide()` for managed views.
+    * Removed `route` property. Use `settings.routeLinks` instead.
+* Improved `Chaplin.utils`:
+    * Removed `underscorize`.
+
 # Chaplin 0.8.1 (1 April 2013)
 * Improved `Chaplin.Layout`:
     * Added `Layout#$` method, which is the same as `View#$`.
@@ -109,9 +262,9 @@
 # Chaplin 0.6.0 (30 December 2012)
 * Updated required Backbone version to 0.9.9+.
 * Improved `Chaplin.Collection`:
-    * Removed `Collection#update` since this function is now provided
-      by Backbone itself. The `deep` option is now called `merge` and it
-      defaults to true.
+    * Removed `Collection#update` since this function is now provided by Backbone itself
+      (`Collection#update` in Backbone < 1.0, `Collection#set` in Backbone >= 1.0).
+      The `deep` option is now called `merge` and it defaults to true.
 * Improved `Chaplin.Controller`:
     * Added Rails-like before action filters to `Controller`s.
     * Added `Controller#redirectToRoute` which works like

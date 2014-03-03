@@ -481,9 +481,9 @@ module.exports = class CollectionView extends View
     view.trigger 'addedToParent'
 
     if @_addedToDOM
-      @triggerAddedtoDOM(view)
+      @triggerAddedToDOM(view)
     else
-      @listenToOnce this, 'addedToDOM', -> @triggerAddedtoDOM(view)
+      @listenToOnce this, 'addedToDOM', -> @triggerAddedToDOM(view)
 
     # Update the list of visible items, trigger a `visibilityChange` event.
     @updateVisibleItems item, included
